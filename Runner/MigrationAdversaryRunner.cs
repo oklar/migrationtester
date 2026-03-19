@@ -107,7 +107,7 @@ public static class MigrationAdversaryRunner
             schema = await RelationalSchemaIntrospector.LoadAsync(conn, DatabaseFamily.MySql, cancellationToken)
                 .ConfigureAwait(false);
         }
-        else
+        else if (family == DatabaseFamily.Sqlite)
         {
             var cs = context.Database.GetConnectionString();
             if (string.IsNullOrWhiteSpace(cs))
@@ -118,6 +118,12 @@ public static class MigrationAdversaryRunner
 
             schema = await RelationalSchemaIntrospector.LoadSqliteFromConnectionStringAsync(cs, cancellationToken)
                 .ConfigureAwait(false);
+        }
+        else
+        {
+            throw new NotSupportedException(
+                $"MigrationAdversaryRunner does not introspect {family} yet. Use SQLite or MySQL for the full seed + migrate pipeline, " +
+                "or run against those providers while using DatabaseFamily to tune repair-hint wording for your production engine.");
         }
 
         var tables = new HashSet<string>(schema.TableNames, StringComparer.OrdinalIgnoreCase);

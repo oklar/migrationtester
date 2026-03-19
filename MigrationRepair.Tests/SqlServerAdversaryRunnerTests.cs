@@ -5,6 +5,7 @@ using Xunit;
 namespace MigrationRepair.Tests;
 
 /// <summary>Requires local SQL Server; see <see cref="TestSqlServerConfig"/>.</summary>
+[Collection("SqlServer integration")]
 public sealed class SqlServerAdversaryRunnerTests
 {
     [Fact]
@@ -14,12 +15,14 @@ public sealed class SqlServerAdversaryRunnerTests
             .UseSqlServer(TestSqlServerConfig.TestRunConnectionString)
             .Options;
 
-        var result = await MigrationAdversaryRunner.RunAsync(new MigrationAdversaryOptions
-        {
-            CreateContext = () => new TestDbContext(options),
-            TargetMigrationId = "20260319180720_Initial",
-            EnableFuzzing = false
-        });
+        var result = await MigrationAdversaryRunner.RunAsync(
+            new MigrationAdversaryOptions
+            {
+                CreateContext = () => new TestDbContext(options),
+                TargetMigrationId = "20260319180720_Initial",
+                EnableFuzzing = false
+            },
+            TestContext.Current.CancellationToken);
 
         Assert.True(result.MigrationSucceeded, result.FailureSummary ?? result.Exception?.ToString());
     }
@@ -31,12 +34,14 @@ public sealed class SqlServerAdversaryRunnerTests
             .UseSqlServer(TestSqlServerConfig.TestRunConnectionString)
             .Options;
 
-        var result = await MigrationAdversaryRunner.RunAsync(new MigrationAdversaryOptions
-        {
-            CreateContext = () => new TestDbContext(options),
-            TargetMigrationId = "20260319180738_AddUniqueCode",
-            EnableFuzzing = false
-        });
+        var result = await MigrationAdversaryRunner.RunAsync(
+            new MigrationAdversaryOptions
+            {
+                CreateContext = () => new TestDbContext(options),
+                TargetMigrationId = "20260319180738_AddUniqueCode",
+                EnableFuzzing = false
+            },
+            TestContext.Current.CancellationToken);
 
         Assert.False(result.MigrationSucceeded);
         Assert.NotNull(result.Exception);

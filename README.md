@@ -86,6 +86,8 @@ Use **Windows auth** on dev (`Integrated Security=True`) when you prefer SSMS-st
 
 ## Tests in this repo
 
+The test project uses **xUnit.net v3** (`xunit.v3`, executable output). SQL integration tests are in collection **`SqlServer integration`**: at the **start** of each `dotnet test` run the **`MigrationRepair_Test`** database is **dropped** (so a previous SSMS session does not block a clean run); after tests finish the database **stays** as the last test left it until the **next** run.
+
 ```bash
 dotnet build MigrationRepair.slnx
 dotnet test MigrationRepair.Tests/MigrationRepair.Tests.csproj

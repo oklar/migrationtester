@@ -4,6 +4,7 @@ using Xunit;
 
 namespace MigrationRepair.Tests;
 
+[Collection("SqlServer integration")]
 public sealed class MigrationAdversaryRunAllTests
 {
     private static MigrationAdversaryBatchOptions Batch =>
@@ -17,11 +18,13 @@ public sealed class MigrationAdversaryRunAllTests
     [Fact]
     public async Task RunAllAsync_single_migration_all_succeed()
     {
-        var steps = await MigrationAdversaryRunner.RunAllAsync(new MigrationAdversaryBatchOptions
-        {
-            CreateContext = Batch.CreateContext,
-            MigrationIds = ["20260319180720_Initial"]
-        });
+        var steps = await MigrationAdversaryRunner.RunAllAsync(
+            new MigrationAdversaryBatchOptions
+            {
+                CreateContext = Batch.CreateContext,
+                MigrationIds = ["20260319180720_Initial"]
+            },
+            TestContext.Current.CancellationToken);
 
         var single = Assert.Single(steps);
         Assert.Equal("20260319180720_Initial", single.MigrationId);
@@ -33,7 +36,7 @@ public sealed class MigrationAdversaryRunAllTests
     [Fact]
     public async Task RunAllAsync_full_chain_middle_step_fails_on_unique_with_hints()
     {
-        var steps = await MigrationAdversaryRunner.RunAllAsync(Batch);
+        var steps = await MigrationAdversaryRunner.RunAllAsync(Batch, TestContext.Current.CancellationToken);
 
         Assert.Equal(3, steps.Count);
         Assert.True(steps[0].Result.MigrationSucceeded, steps[0].Result.FailureSummary);
@@ -56,7 +59,8 @@ public sealed class MigrationAdversaryRunAllTests
         var steps = await MigrationAdversaryRunner.RunRangeAsync(
             Batch,
             fromMigrationIdInclusive: "20260319180738_AddUniqueCode",
-            toMigrationIdInclusive: "20260319190000_AddDescription");
+            toMigrationIdInclusive: "20260319190000_AddDescription",
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(2, steps.Count);
         Assert.Equal("20260319180738_AddUniqueCode", steps[0].MigrationId);
@@ -75,6 +79,10 @@ public sealed class MigrationAdversaryRunAllTests
         };
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            MigrationAdversaryRunner.RunRangeAsync(bad, "20260319180720_Initial", "20260319180738_AddUniqueCode"));
+            MigrationAdversaryRunner.RunRangeAsync(
+                bad,
+                "20260319180720_Initial",
+                "20260319180738_AddUniqueCode",
+                TestContext.Current.CancellationToken));
     }
 }

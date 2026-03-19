@@ -19,6 +19,7 @@ public sealed class TestDbContext : DbContext
             e.ToTable("Items");
             e.HasKey(x => x.Id);
             e.Property(x => x.Code).IsRequired();
+            e.Property(x => x.Description);
             e.HasIndex(x => x.Code).IsUnique();
         });
     }

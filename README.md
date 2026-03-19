@@ -30,7 +30,7 @@ if (!result.MigrationSucceeded)
 
 ## E2E / integration smoke
 
-Full **Migrate** runs are sensitive to **SQLite pooling** and test host lifetime in some environments. This repo includes **unit tests** for capture + scenario planning; for a full pipeline smoke test, run the snippet above from a **console app** or a test host you control (unique `Data Source` file per run, `SqliteConnection.ClearAllPools()` after `EnsureDeleted` if you reuse paths).
+Full **Migrate** runs are sensitive to **SQLite pooling** and test host lifetime in some environments. This repo includes **unit tests** for capture + scenario planning; for a full pipeline smoke test, run the snippet above from a **console app** or a test host you control. Use a unique `Data Source` per run; the runner calls **`EnsureDeleted`** and clears **SQLite** connection pools when the family is SQLite—still assert **`MigrationSucceeded`** as in the sample.
 
 ## Limitations
 

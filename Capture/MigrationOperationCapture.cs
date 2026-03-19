@@ -19,7 +19,17 @@ public static class MigrationOperationCapture
             throw new InvalidOperationException("Could not resolve Migration.Up via reflection.");
         }
 
-        return (migration, builder) => mi.Invoke(migration, [builder]);
+        return (migration, builder) =>
+        {
+            try
+            {
+                mi.Invoke(migration, [builder]);
+            }
+            catch (TargetInvocationException ex) when (ex.InnerException is not null)
+            {
+                throw ex.InnerException;
+            }
+        };
     }
 
     /// <summary>
@@ -38,11 +48,14 @@ public static class MigrationOperationCapture
     }
 
     /// <summary>
+    /// Returns true if the captured operations include raw SQL.
+    /// </summary>
+    public static bool ContainsRawSql(IReadOnlyList<MigrationOperation> operations)
+        => operations.Any(static o => o is SqlOperation);
+
+    /// <summary>
     /// Returns true if <see cref="Migration.Up"/> records at least one <see cref="SqlOperation"/>.
     /// </summary>
     public static bool ContainsRawSql(Migration migration, string activeProvider)
-    {
-        var ops = Capture(migration, activeProvider);
-        return ops.Any(static o => o is SqlOperation);
-    }
+        => ContainsRawSql(Capture(migration, activeProvider));
 }

@@ -51,15 +51,33 @@ public static class ScenarioPlanner
     {
         var table = idx.Table;
         var present = tables.Contains(table);
+        var hasFilter = !string.IsNullOrWhiteSpace(idx.Filter);
+        var columns = idx.Columns?.ToList() ?? [];
+        var noColumns = columns.Count == 0;
+        var skipped = !present || hasFilter || noColumns;
+        string? skipReason = null;
+        if (!present)
+        {
+            skipReason = "Table does not exist at migration N-1; cannot seed duplicates before this migration's Up().";
+        }
+        else if (hasFilter)
+        {
+            skipReason = "Filtered (partial) unique index; simple duplicate INSERT seeds may not violate the predicate.";
+        }
+        else if (noColumns)
+        {
+            skipReason = "Unique index has no column list; cannot build duplicate seed.";
+        }
+
         return new AdversaryScenario
         {
             Kind = AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint,
             Name = $"Duplicate values for unique index '{idx.Name}' on '{table}'",
             Table = table,
-            Columns = idx.Columns.ToList(),
+            Columns = columns,
             SourceOperation = idx,
-            Skipped = !present,
-            SkipReason = present ? null : "Table does not exist at migration N-1; cannot seed duplicates before this migration's Up()."
+            Skipped = skipped,
+            SkipReason = skipped ? skipReason : null
         };
     }
 
@@ -69,15 +87,21 @@ public static class ScenarioPlanner
     {
         var table = uq.Table;
         var present = tables.Contains(table);
+        var columns = uq.Columns?.ToList() ?? [];
+        var noColumns = columns.Count == 0;
         return new AdversaryScenario
         {
             Kind = AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint,
             Name = $"Duplicate values for unique constraint '{uq.Name}' on '{table}'",
             Table = table,
-            Columns = uq.Columns.ToList(),
+            Columns = columns,
             SourceOperation = uq,
-            Skipped = !present,
-            SkipReason = present ? null : "Table does not exist at migration N-1."
+            Skipped = !present || noColumns,
+            SkipReason = !present
+                ? "Table does not exist at migration N-1."
+                : noColumns
+                    ? "Unique constraint has no column list; cannot build duplicate seed."
+                    : null
         };
     }
 

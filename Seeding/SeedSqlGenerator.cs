@@ -64,7 +64,6 @@ public static class SeedSqlGenerator
         var insertCols = new List<string>();
         var vals1 = new List<string>();
         var vals2 = new List<string>();
-        var pkCols = cols.Where(static c => c.IsPrimaryKey).ToList();
 
         foreach (var c in cols.OrderBy(static x => x.Ordinal))
         {
@@ -194,6 +193,11 @@ public static class SeedSqlGenerator
         IReadOnlyList<TableColumnMetadata> cols,
         DatabaseFamily family)
     {
+        if (s.Columns is not { Count: > 0 })
+        {
+            return [];
+        }
+
         var target = s.Columns[0];
         var insertCols = new List<string>();
         var vals = new List<string>();
@@ -235,6 +239,11 @@ public static class SeedSqlGenerator
         IReadOnlyList<TableColumnMetadata> cols,
         DatabaseFamily family)
     {
+        if (s.Columns is not { Count: > 0 })
+        {
+            return [];
+        }
+
         var newMax = s.NewMaxLength ?? 1;
         var payload = new string('x', Math.Max(newMax + 16, newMax * 2));
         var tableQ = SqlDialect.Q(s.Table, family);

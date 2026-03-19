@@ -105,7 +105,8 @@ public static class MigrationFuzzer
     private static string DefaultLiteral(TableColumnMetadata c, Random rnd)
     {
         var t = c.DeclaredType ?? "";
-        if (t.Contains("INT", StringComparison.OrdinalIgnoreCase))
+        if (t.Contains("INT", StringComparison.OrdinalIgnoreCase)
+            && !t.Contains("POINT", StringComparison.OrdinalIgnoreCase))
         {
             return rnd.Next(1, 1_000_000).ToString();
         }

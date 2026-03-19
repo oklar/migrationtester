@@ -41,7 +41,7 @@ public static class MigrationAdversaryRunner
         CancellationToken cancellationToken)
     {
         var assembly = context.GetService<IMigrationsAssembly>();
-        var ordered = assembly.Migrations.Keys.Order(StringComparer.Ordinal).ToList();
+        var ordered = context.Database.GetMigrations().ToList();
         var target = assembly.FindMigrationId(options.TargetMigrationId);
         if (string.IsNullOrEmpty(target))
         {
@@ -61,9 +61,27 @@ public static class MigrationAdversaryRunner
             : options.DatabaseFamily;
 
         var migrationType = assembly.Migrations[target];
-        var migration = (Migration)Activator.CreateInstance(migrationType)!;
+        object? instance;
+        try
+        {
+            instance = Activator.CreateInstance(migrationType);
+        }
+        catch (Exception ex) when (ex is not InvalidOperationException)
+        {
+            throw new InvalidOperationException(
+                $"Could not create migration instance '{migrationType.Name}'. EF migrations must have an accessible parameterless constructor (use partial class + designer pattern).",
+                ex);
+        }
+
+        if (instance is null)
+        {
+            throw new InvalidOperationException($"Activator returned null for migration type '{migrationType.Name}'.");
+        }
+
+        var migration = (Migration)instance;
+
         var ops = MigrationOperationCapture.Capture(migration, activeProvider);
-        var hasRawSql = ops.Any(static o => o is SqlOperation);
+        var hasRawSql = MigrationOperationCapture.ContainsRawSql(ops);
         var warnings = new List<string>();
         if (hasRawSql)
         {
@@ -72,7 +90,7 @@ public static class MigrationAdversaryRunner
         }
 
         await context.Database.EnsureDeletedAsync(cancellationToken).ConfigureAwait(false);
-        if (family != DatabaseFamily.MySql)
+        if (family == DatabaseFamily.Sqlite)
         {
             SqliteConnection.ClearAllPools();
         }

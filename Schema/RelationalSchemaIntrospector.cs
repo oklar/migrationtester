@@ -40,7 +40,8 @@ public static class RelationalSchemaIntrospector
             {
                 DatabaseFamily.Sqlite => await LoadSqlite(connection, cancellationToken).ConfigureAwait(false),
                 DatabaseFamily.MySql => await LoadMySql(connection, cancellationToken).ConfigureAwait(false),
-                _ => await LoadSqlite(connection, cancellationToken).ConfigureAwait(false)
+                _ => throw new NotSupportedException(
+                    $"RelationalSchemaIntrospector.LoadAsync does not support {family}. Use Sqlite or MySql, or call LoadSqliteFromConnectionStringAsync for SQLite file connections.")
             };
         }
         finally
@@ -108,18 +109,33 @@ public static class RelationalSchemaIntrospector
             {
                 cmd.CommandText = $"PRAGMA foreign_key_list({QuoteSqliteIdent(table)});";
                 await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                var fkGroups = new Dictionary<long, (string Principal, List<(int Seq, string From, string To)> Cols)>();
                 while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
                     // id, seq, table, from, to, on_update, on_delete, match
+                    var fkId = reader.GetInt64(0);
+                    var seq = (int)reader.GetInt64(1);
                     var principal = reader.GetString(2);
                     var from = reader.GetString(3);
                     var to = reader.GetString(4);
+                    if (!fkGroups.TryGetValue(fkId, out var g))
+                    {
+                        g = (principal, []);
+                        fkGroups[fkId] = g;
+                    }
+
+                    g.Cols.Add((seq, from, to));
+                }
+
+                foreach (var (_, (principal, cols)) in fkGroups)
+                {
+                    var ordered = cols.OrderBy(static x => x.Seq).ToList();
                     fks.Add(new ForeignKeyEdge
                     {
                         DependentTable = table,
                         PrincipalTable = principal,
-                        DependentColumns = [from],
-                        PrincipalColumns = [to]
+                        DependentColumns = ordered.Select(static x => x.From).ToList(),
+                        PrincipalColumns = ordered.Select(static x => x.To).ToList()
                     });
                 }
             }

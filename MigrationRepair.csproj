@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>MigrationRepair</RootNamespace>
+    <AssemblyName>MigrationRepair</AssemblyName>
+    <Version>0.1.0</Version>
+    <Authors>MigrationRepair</Authors>
+    <Description>Adversarial EF Core migration testing: seed pre-migration data that targets schema-tightening operations and run Up() with actionable SQL repair hints.</Description>
+    <PackageTags>efcore;entity-framework;migrations;testing;adversarial</PackageTags>
+    <PackageProjectUrl>https://github.com/yourorg/MigrationRepair</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/yourorg/MigrationRepair</RepositoryUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.0" />
+  </ItemGroup>
+
+  <!-- Nested test project lives under this folder; SDK default glob would compile it into this library. -->
+  <ItemGroup>
+    <Compile Remove="MigrationRepair.Tests/**" />
+    <EmbeddedResource Remove="MigrationRepair.Tests/**" />
+    <None Remove="MigrationRepair.Tests/**" />
+  </ItemGroup>
+
+</Project>

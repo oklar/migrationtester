@@ -1,0 +1,58 @@
+## Build
+bin/
+obj/
+[Bb]uild/
+[Dd]ebug/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+nupkg/
+
+## NuGet
+*.nupkg
+*.snupkg
+**/packages/*
+!**/packages/build/
+
+## .NET / Rider / VS
+.vs/
+.idea/
+*.user
+*.userosscache
+*.suo
+*.sln.docstates
+*.rsuser
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+## SQLite / EF local DBs
+*.db
+*.db-shm
+*.db-wal
+design.db
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Test / coverage
+TestResults/
+*.trx
+coverage*.json
+coverage*.xml
+*.coverage
+*.coveragexml
+
+## Secrets (never commit)
+appsettings.*.local.json
+*.pfx
+secrets.json

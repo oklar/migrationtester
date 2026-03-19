@@ -7,8 +7,9 @@ public sealed class TestDbContextFactory : IDesignTimeDbContextFactory<TestDbCon
 {
     public TestDbContext CreateDbContext(string[] args)
     {
+        var cs = TestSqlServerConfig.DesignTimeConnectionString;
         var o = new DbContextOptionsBuilder<TestDbContext>()
-            .UseSqlite("Data Source=design.db")
+            .UseSqlServer(cs)
             .Options;
         return new TestDbContext(o);
     }

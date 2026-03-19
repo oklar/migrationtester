@@ -8,8 +8,8 @@
     <AssemblyName>MigrationRepair</AssemblyName>
     <Version>0.1.0</Version>
     <Authors>MigrationRepair</Authors>
-    <Description>Adversarial EF Core migration testing: seed pre-migration data that targets schema-tightening operations and run Up() with actionable SQL repair hints.</Description>
-    <PackageTags>efcore;entity-framework;migrations;testing;adversarial</PackageTags>
+    <Description>Adversarial EF Core migration testing for SQL Server: seed pre-migration data that targets schema-tightening operations and run Up() with actionable T-SQL repair hints.</Description>
+    <PackageTags>efcore;entity-framework;migrations;testing;adversarial;sqlserver</PackageTags>
     <PackageProjectUrl>https://github.com/yourorg/MigrationRepair</PackageProjectUrl>
     <RepositoryUrl>https://github.com/yourorg/MigrationRepair</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -23,7 +23,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.0" />
   </ItemGroup>
 

@@ -1,20 +1,25 @@
 # MigrationRepair
 
-Adversarial **EF Core** migration testing: migrate the database to **N−1**, seed at least one valid row per table plus **deterministic dirty rows** derived from `Up()` operations (unique indexes, foreign keys, nullable→required, max-length shrink, check constraints), then run **`Migrate` to N**. If `Up()` fails, you get a summary and **portable SQL repair hints** (`RepairHintCatalog`), with extra wording for **MySQL**, **SQL Server**, and **PostgreSQL**.
+Adversarial **EF Core** migration testing for **Microsoft SQL Server**: migrate the database to **N−1**, seed at least one valid row per table plus **deterministic dirty rows** derived from `Up()` (unique indexes, foreign keys, nullable→required, max-length shrink, check constraints), then run **`Migrate` to N**. If `Up()` fails, you get a summary and **T-SQL repair hints** (`RepairHintCatalog`).
 
-**Target:** EF Core **10** / **.NET 10** (package `Microsoft.EntityFrameworkCore.Relational` 10.0.0).
+**Target:** EF Core **10** / **.NET 10** (`Microsoft.EntityFrameworkCore.Relational` 10.0.0). Your app uses **`Microsoft.EntityFrameworkCore.SqlServer`**.
+
+## Prerequisites
+
+- SQL Server (localhost is fine) and a login that can **create/drop databases** (or pre-create empty databases used in connection strings).
+- `DbContext` configured with **`UseSqlServer(...)`** and the same migrations you want to stress-test.
 
 ## Usage
 
 ```csharp
 var optionsBuilder = new DbContextOptionsBuilder<YourDbContext>()
-    .UseSqlite($"Data Source={Path.Combine(Path.GetTempPath(), "adv.db")}");
+    .UseSqlServer("Server=localhost;Database=YourApp_Adversary;Integrated Security=True;TrustServerCertificate=True;");
 
 var result = await MigrationAdversaryRunner.RunAsync(new MigrationAdversaryOptions
 {
     CreateContext = () => new YourDbContext(optionsBuilder.Options),
-    TargetMigrationId = "20260319120000_YourMigration", // full migration id
-    EnableFuzzing = false, // optional: random legal inserts validated per attempt
+    TargetMigrationId = "20260319120000_YourMigration",
+    EnableFuzzing = false,
     FuzzSeed = 42,
     FuzzIterationCount = 8
 });
@@ -25,32 +30,29 @@ if (!result.MigrationSucceeded)
 }
 ```
 
-- Set **`DatabaseFamily`** when you want explicit dialect hints (default **`Portable`** infers from provider).
-- Set **`ActiveProvider`** if auto-detection is wrong (same string as for `MigrationBuilder`, e.g. `Microsoft.EntityFrameworkCore.Sqlite`).
+- **`ActiveProvider`**: optional; defaults to **`Microsoft.EntityFrameworkCore.SqlServer`** for capturing `MigrationBuilder` operations.
 
-## E2E / integration smoke
+## Tests in this repo
 
-Full **Migrate** runs are sensitive to **SQLite pooling** and test host lifetime in some environments. This repo includes **unit tests** for capture + scenario planning; for a full pipeline smoke test, run the snippet above from a **console app** or a test host you control. Use a unique `Data Source` per run; the runner calls **`EnsureDeleted`** and clears **SQLite** connection pools when the family is SQLite—still assert **`MigrationSucceeded`** as in the sample.
-
-## Limitations
-
-- **`migrationBuilder.Sql(...)`**: scenarios are inferred from **fluent operations** only; raw SQL may **bypass** analysis—`result.ContainsRawSqlInMigration` and **warnings** flag this.
-- **First migration**: tables that do not exist at **N−1** skip table-dependent scenarios (see `SkipReason` on `AdversaryScenario`).
-- **Check constraints**: no automatic violating row generation; scenario is flagged with guidance to add manual tests.
-- **SQL Server / PostgreSQL** schema introspection in the runner is not fully wired; **SQLite** and **MySQL** introspection paths are implemented for seed ordering/metadata.
-- **Custom `Up()` ordering** or data-fix steps can produce **false negatives** (migration succeeds while naive adversarial data exists).
-
-## Nested test project layout
-
-The sample test project lives under `MigrationRepair.Tests/`. The main SDK project **excludes** that folder from its default compile glob so `MigrationRepair.csproj` does not pick up test sources.
-
-## Building
+Integration tests use **`TestSqlServerConfig.TestRunConnectionString`** (default: `Server=localhost;Database=MigrationRepair_Test;...`). Override with env **`MIGRATION_REPAIR_SQL_TEST`** if needed. Design-time **`dotnet ef`** uses **`MIGRATION_REPAIR_SQL_DESIGN`** or **`MigrationRepair_Design`**.
 
 ```bash
 dotnet build MigrationRepair.slnx
 dotnet test MigrationRepair.Tests/MigrationRepair.Tests.csproj
 ```
 
+## Limitations
+
+- **`migrationBuilder.Sql(...)`**: scenarios are inferred from **fluent operations** only; raw SQL may bypass analysis (`ContainsRawSqlInMigration` + warnings).
+- **First migration**: tables missing at **N−1** skip table-dependent scenarios (`SkipReason` on `AdversaryScenario`).
+- **Check constraints**: no automatic violating row; scenario points you to manual tests.
+- **Schema**: introspection assumes **`dbo`** user tables (matches typical EF defaults).
+- **Custom `Up()` ordering** or data-fix steps can cause **false negatives**.
+
+## Nested test project
+
+`MigrationRepair.Tests/` is excluded from the main library compile glob in `MigrationRepair.csproj`.
+
 ## Local tooling
 
-`dotnet-tools.json` pins **dotnet-ef** 10.0.0 for regenerating sample migrations in the test project.
+`dotnet-tools.json` pins **dotnet-ef** 10.0.0 for migrations in the test project.

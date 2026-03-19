@@ -1,5 +1,4 @@
 using System.Text;
-using MigrationRepair.Hints;
 using MigrationRepair.Planning;
 using MigrationRepair.Schema;
 
@@ -7,7 +6,7 @@ namespace MigrationRepair.Seeding;
 
 public static class SeedSqlGenerator
 {
-    public static IReadOnlyList<string> BaselineInserts(RelationalSchemaModel schema, DatabaseFamily family)
+    public static IReadOnlyList<string> BaselineInserts(RelationalSchemaModel schema)
     {
         var order = TableInsertOrder.Topological(schema.TableNames, schema.ForeignKeys);
         var sql = new List<string>();
@@ -18,7 +17,7 @@ public static class SeedSqlGenerator
                 continue;
             }
 
-            var stmt = TryBuildInsertOneRow(table, cols, family);
+            var stmt = TryBuildInsertOneRow(table, cols);
             if (stmt is not null)
             {
                 sql.Add(stmt);
@@ -30,8 +29,7 @@ public static class SeedSqlGenerator
 
     public static IReadOnlyList<string> AdversarialStatements(
         AdversaryScenario scenario,
-        RelationalSchemaModel schema,
-        DatabaseFamily family)
+        RelationalSchemaModel schema)
     {
         if (scenario.Skipped)
         {
@@ -45,10 +43,10 @@ public static class SeedSqlGenerator
 
         return scenario.Kind switch
         {
-            AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint => DuplicateRows(scenario, schema, cols, family),
-            AdversaryScenarioKind.ForeignKeyOrphan => OrphanRow(scenario, schema, cols, family),
-            AdversaryScenarioKind.NonNullableColumnWithNull => NullOutColumn(scenario, schema, cols, family),
-            AdversaryScenarioKind.MaxLengthExceededAfterShrink => LongValue(scenario, schema, cols, family),
+            AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint => DuplicateRows(scenario, schema, cols),
+            AdversaryScenarioKind.ForeignKeyOrphan => OrphanRow(scenario, schema, cols),
+            AdversaryScenarioKind.NonNullableColumnWithNull => NullOutColumn(scenario, schema, cols),
+            AdversaryScenarioKind.MaxLengthExceededAfterShrink => LongValue(scenario, schema, cols),
             _ => []
         };
     }
@@ -56,8 +54,7 @@ public static class SeedSqlGenerator
     private static IReadOnlyList<string> DuplicateRows(
         AdversaryScenario s,
         RelationalSchemaModel schema,
-        IReadOnlyList<TableColumnMetadata> cols,
-        DatabaseFamily family)
+        IReadOnlyList<TableColumnMetadata> cols)
     {
         var dupValue = "adv-dup";
         var t = s.Table;
@@ -85,9 +82,9 @@ public static class SeedSqlGenerator
             }
             else
             {
-                var lit = DefaultLiteral(c, family, seed: 1);
+                var lit = DefaultLiteral(c, seed: 1);
                 vals1.Add(lit);
-                vals2.Add(AdjustLiteralForSecondRow(c, lit, family));
+                vals2.Add(AdjustLiteralForSecondRow(c, lit));
             }
         }
 
@@ -96,8 +93,8 @@ public static class SeedSqlGenerator
             return [];
         }
 
-        var tableQ = SqlDialect.Q(t, family);
-        var colList = string.Join(", ", insertCols.Select(c => SqlDialect.Q(c, family)));
+        var tableQ = SqlDialect.Q(t);
+        var colList = string.Join(", ", insertCols.Select(c => SqlDialect.Q(c)));
         return
         [
             $"INSERT INTO {tableQ} ({colList}) VALUES ({string.Join(", ", vals1)});",
@@ -105,7 +102,7 @@ public static class SeedSqlGenerator
         ];
     }
 
-    private static string AdjustLiteralForSecondRow(TableColumnMetadata c, string firstLit, DatabaseFamily family)
+    private static string AdjustLiteralForSecondRow(TableColumnMetadata c, string firstLit)
     {
         if (c.DeclaredType?.Contains("INT", StringComparison.OrdinalIgnoreCase) == true && firstLit == "0")
         {
@@ -123,8 +120,7 @@ public static class SeedSqlGenerator
     private static IReadOnlyList<string> OrphanRow(
         AdversaryScenario s,
         RelationalSchemaModel schema,
-        IReadOnlyList<TableColumnMetadata> cols,
-        DatabaseFamily family)
+        IReadOnlyList<TableColumnMetadata> cols)
     {
         var insertCols = new List<string>();
         var vals = new List<string>();
@@ -143,7 +139,7 @@ public static class SeedSqlGenerator
             }
             else
             {
-                vals.Add(DefaultLiteral(c, family, seed: 99));
+                vals.Add(DefaultLiteral(c, seed: 99));
             }
         }
 
@@ -152,8 +148,8 @@ public static class SeedSqlGenerator
             return [];
         }
 
-        var tableQ = SqlDialect.Q(s.Table, family);
-        var colList = string.Join(", ", insertCols.Select(c => SqlDialect.Q(c, family)));
+        var tableQ = SqlDialect.Q(s.Table);
+        var colList = string.Join(", ", insertCols.Select(c => SqlDialect.Q(c)));
         return [$"INSERT INTO {tableQ} ({colList}) VALUES ({string.Join(", ", vals)});"];
     }
 
@@ -190,8 +186,7 @@ public static class SeedSqlGenerator
     private static IReadOnlyList<string> NullOutColumn(
         AdversaryScenario s,
         RelationalSchemaModel schema,
-        IReadOnlyList<TableColumnMetadata> cols,
-        DatabaseFamily family)
+        IReadOnlyList<TableColumnMetadata> cols)
     {
         if (s.Columns is not { Count: > 0 })
         {
@@ -219,7 +214,7 @@ public static class SeedSqlGenerator
             }
             else
             {
-                vals.Add(DefaultLiteral(c, family, seed: 2));
+                vals.Add(DefaultLiteral(c, seed: 2));
             }
         }
 
@@ -228,16 +223,15 @@ public static class SeedSqlGenerator
             return [];
         }
 
-        var tableQ = SqlDialect.Q(s.Table, family);
-        var colList = string.Join(", ", insertCols.Select(c => SqlDialect.Q(c, family)));
+        var tableQ = SqlDialect.Q(s.Table);
+        var colList = string.Join(", ", insertCols.Select(c => SqlDialect.Q(c)));
         return [$"INSERT INTO {tableQ} ({colList}) VALUES ({string.Join(", ", vals)});"];
     }
 
     private static IReadOnlyList<string> LongValue(
         AdversaryScenario s,
         RelationalSchemaModel schema,
-        IReadOnlyList<TableColumnMetadata> cols,
-        DatabaseFamily family)
+        IReadOnlyList<TableColumnMetadata> cols)
     {
         if (s.Columns is not { Count: > 0 })
         {
@@ -246,15 +240,14 @@ public static class SeedSqlGenerator
 
         var newMax = s.NewMaxLength ?? 1;
         var payload = new string('x', Math.Max(newMax + 16, newMax * 2));
-        var tableQ = SqlDialect.Q(s.Table, family);
-        var colQ = SqlDialect.Q(s.Columns[0], family);
+        var tableQ = SqlDialect.Q(s.Table);
+        var colQ = SqlDialect.Q(s.Columns[0]);
         return [$"UPDATE {tableQ} SET {colQ} = {SqlString(payload)};"];
     }
 
     private static string? TryBuildInsertOneRow(
         string table,
-        IReadOnlyList<TableColumnMetadata> cols,
-        DatabaseFamily family)
+        IReadOnlyList<TableColumnMetadata> cols)
     {
         var insertCols = new List<string>();
         var vals = new List<string>();
@@ -272,7 +265,7 @@ public static class SeedSqlGenerator
             }
             else
             {
-                vals.Add(DefaultLiteral(c, family, seed: 1));
+                vals.Add(DefaultLiteral(c, seed: 1));
             }
         }
 
@@ -281,12 +274,12 @@ public static class SeedSqlGenerator
             return null;
         }
 
-        var tableQ = SqlDialect.Q(table, family);
-        var colList = string.Join(", ", insertCols.Select(c => SqlDialect.Q(c, family)));
+        var tableQ = SqlDialect.Q(table);
+        var colList = string.Join(", ", insertCols.Select(c => SqlDialect.Q(c)));
         return $"INSERT INTO {tableQ} ({colList}) VALUES ({string.Join(", ", vals)});";
     }
 
-    private static string DefaultLiteral(TableColumnMetadata c, DatabaseFamily family, int seed)
+    private static string DefaultLiteral(TableColumnMetadata c, int seed)
     {
         var t = c.DeclaredType ?? "";
         if (t.Contains("INT", StringComparison.OrdinalIgnoreCase)
@@ -304,9 +297,27 @@ public static class SeedSqlGenerator
             return seed.ToString();
         }
 
+        if (string.Equals(t, "bit", StringComparison.OrdinalIgnoreCase))
+        {
+            return "0";
+        }
+
+        if (t.Contains("binary", StringComparison.OrdinalIgnoreCase))
+        {
+            return "0x00";
+        }
+
         if (t.Contains("BLOB", StringComparison.OrdinalIgnoreCase))
         {
-            return "X'00'";
+            return "0x00";
+        }
+
+        if (string.Equals(t, "date", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(t, "datetime", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(t, "datetime2", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(t, "smalldatetime", StringComparison.OrdinalIgnoreCase))
+        {
+            return "'2000-01-01'";
         }
 
         return SqlString($"s{seed}");
@@ -314,7 +325,7 @@ public static class SeedSqlGenerator
 
     private static string SqlString(string s)
     {
-        var sb = new StringBuilder("'");
+        var sb = new StringBuilder("N'");
         foreach (var ch in s)
         {
             if (ch == '\'')

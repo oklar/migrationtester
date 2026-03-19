@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using MigrationRepair.Capture;
+using MigrationRepair.Runner;
 using MigrationRepair.Tests.Migrations;
 using Xunit;
 
@@ -11,7 +12,7 @@ public sealed class MigrationOperationCaptureTests
     public void Capture_AddUniqueCode_migration_records_unique_CreateIndex()
     {
         var migration = new AddUniqueCode();
-        var ops = MigrationOperationCapture.Capture(migration, "Microsoft.EntityFrameworkCore.Sqlite");
+        var ops = MigrationOperationCapture.Capture(migration, ActiveProviderResolver.SqlServerProvider);
 
         var unique = Assert.Single(ops.OfType<CreateIndexOperation>(), i => i.IsUnique);
         Assert.Equal("Items", unique.Table);

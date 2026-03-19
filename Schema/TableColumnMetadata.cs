@@ -21,6 +21,13 @@ public sealed class ForeignKeyEdge
 
 public sealed class RelationalSchemaModel
 {
+    public static RelationalSchemaModel Empty { get; } = new()
+    {
+        TableNames = [],
+        ColumnsByTable = new Dictionary<string, IReadOnlyList<TableColumnMetadata>>(StringComparer.OrdinalIgnoreCase),
+        ForeignKeys = []
+    };
+
     public required IReadOnlyList<string> TableNames { get; init; }
     public required IReadOnlyDictionary<string, IReadOnlyList<TableColumnMetadata>> ColumnsByTable { get; init; }
     public required IReadOnlyList<ForeignKeyEdge> ForeignKeys { get; init; }

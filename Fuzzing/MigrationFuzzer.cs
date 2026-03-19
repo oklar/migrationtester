@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using MigrationRepair.Hints;
 using MigrationRepair.Schema;
 using MigrationRepair.Seeding;
 
@@ -13,7 +12,6 @@ public static class MigrationFuzzer
     public static async Task RunAsync(
         DbContext context,
         RelationalSchemaModel schema,
-        DatabaseFamily family,
         int seed,
         int iterations,
         IList<string> sqlLog,
@@ -84,8 +82,8 @@ public static class MigrationFuzzer
                 continue;
             }
 
-            var tableQ = SqlDialect.Q(table, family);
-            var colList = string.Join(", ", insertCols.Select(c => SqlDialect.Q(c, family)));
+            var tableQ = SqlDialect.Q(table);
+            var colList = string.Join(", ", insertCols.Select(c => SqlDialect.Q(c)));
             var sql = $"INSERT INTO {tableQ} ({colList}) VALUES ({string.Join(", ", vals)});";
 
             await using var tx = await context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
@@ -116,6 +114,6 @@ public static class MigrationFuzzer
 
     private static string QuoteString(string s)
     {
-        return "'" + s.Replace("'", "''", StringComparison.Ordinal) + "'";
+        return "N'" + s.Replace("'", "''", StringComparison.Ordinal) + "'";
     }
 }

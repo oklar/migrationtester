@@ -1,20 +1,19 @@
 using System.Text;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using MigrationRepair.Capture;
+using MigrationRepair.Fuzzing;
 using MigrationRepair.Hints;
 using MigrationRepair.Planning;
 using MigrationRepair.Schema;
-using MigrationRepair.Fuzzing;
 using MigrationRepair.Seeding;
 
 namespace MigrationRepair.Runner;
 
 /// <summary>
-/// Applies migration N-1, seeds baseline + adversarial data, then migrates to N.
+/// Applies migration N-1 on SQL Server, seeds baseline + adversarial data, then migrates to N.
 /// </summary>
 public static class MigrationAdversaryRunner
 {
@@ -56,9 +55,6 @@ public static class MigrationAdversaryRunner
 
         var prev = idx > 0 ? ordered[idx - 1] : null;
         var activeProvider = options.ActiveProvider ?? ActiveProviderResolver.Resolve(context);
-        var family = options.DatabaseFamily == DatabaseFamily.Portable
-            ? ActiveProviderResolver.DetectFamily(activeProvider)
-            : options.DatabaseFamily;
 
         var migrationType = assembly.Migrations[target];
         object? instance;
@@ -90,47 +86,23 @@ public static class MigrationAdversaryRunner
         }
 
         await context.Database.EnsureDeletedAsync(cancellationToken).ConfigureAwait(false);
-        if (family == DatabaseFamily.Sqlite)
-        {
-            SqliteConnection.ClearAllPools();
-        }
 
         if (prev is not null)
         {
             await context.Database.MigrateAsync(prev, cancellationToken).ConfigureAwait(false);
         }
 
-        RelationalSchemaModel schema;
-        if (family == DatabaseFamily.MySql)
-        {
-            var conn = context.Database.GetDbConnection();
-            schema = await RelationalSchemaIntrospector.LoadAsync(conn, DatabaseFamily.MySql, cancellationToken)
+        // First migration: database may not exist until Migrate(target); N-1 has no user tables.
+        var schema = prev is null
+            ? RelationalSchemaModel.Empty
+            : await RelationalSchemaIntrospector.LoadAsync(context.Database.GetDbConnection(), cancellationToken)
                 .ConfigureAwait(false);
-        }
-        else if (family == DatabaseFamily.Sqlite)
-        {
-            var cs = context.Database.GetConnectionString();
-            if (string.IsNullOrWhiteSpace(cs))
-            {
-                throw new InvalidOperationException(
-                    "DbContext has no connection string; cannot introspect the database for seeding.");
-            }
-
-            schema = await RelationalSchemaIntrospector.LoadSqliteFromConnectionStringAsync(cs, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        else
-        {
-            throw new NotSupportedException(
-                $"MigrationAdversaryRunner does not introspect {family} yet. Use SQLite or MySQL for the full seed + migrate pipeline, " +
-                "or run against those providers while using DatabaseFamily to tune repair-hint wording for your production engine.");
-        }
 
         var tables = new HashSet<string>(schema.TableNames, StringComparer.OrdinalIgnoreCase);
         var scenarios = ScenarioPlanner.Plan(ops, tables);
 
         var sqlLog = new List<string>();
-        foreach (var sql in SeedSqlGenerator.BaselineInserts(schema, family))
+        foreach (var sql in SeedSqlGenerator.BaselineInserts(schema))
         {
             await context.Database.ExecuteSqlRawAsync(sql, cancellationToken).ConfigureAwait(false);
             sqlLog.Add(sql);
@@ -138,13 +110,13 @@ public static class MigrationAdversaryRunner
 
         if (options.EnableFuzzing)
         {
-            await MigrationFuzzer.RunAsync(context, schema, family, options.FuzzSeed, options.FuzzIterationCount, sqlLog, cancellationToken)
+            await MigrationFuzzer.RunAsync(context, schema, options.FuzzSeed, options.FuzzIterationCount, sqlLog, cancellationToken)
                 .ConfigureAwait(false);
         }
 
         foreach (var scenario in scenarios.Where(static s => !s.Skipped))
         {
-            foreach (var sql in SeedSqlGenerator.AdversarialStatements(scenario, schema, family))
+            foreach (var sql in SeedSqlGenerator.AdversarialStatements(scenario, schema))
             {
                 await context.Database.ExecuteSqlRawAsync(sql, cancellationToken).ConfigureAwait(false);
                 sqlLog.Add(sql);
@@ -165,7 +137,7 @@ public static class MigrationAdversaryRunner
         }
         catch (Exception ex)
         {
-            var hint = BuildHints(scenarios.Where(static s => !s.Skipped), family);
+            var hint = BuildHints(scenarios.Where(static s => !s.Skipped));
             return new MigrationAdversaryResult
             {
                 MigrationSucceeded = false,
@@ -179,13 +151,13 @@ public static class MigrationAdversaryRunner
         }
     }
 
-    private static string BuildHints(IEnumerable<AdversaryScenario> executed, DatabaseFamily family)
+    private static string BuildHints(IEnumerable<AdversaryScenario> executed)
     {
         var sb = new StringBuilder();
         foreach (var s in executed)
         {
             sb.AppendLine($"-- {s.Name}");
-            sb.AppendLine(RepairHintCatalog.ForScenario(s, family));
+            sb.AppendLine(RepairHintCatalog.ForScenario(s));
             sb.AppendLine();
         }
 

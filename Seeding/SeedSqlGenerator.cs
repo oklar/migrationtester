@@ -10,14 +10,14 @@ public static class SeedSqlGenerator
     {
         var order = TableInsertOrder.Topological(schema.TableNames, schema.ForeignKeys);
         var sql = new List<string>();
-        foreach (var table in order)
+        foreach (string table in order)
         {
             if (!schema.ColumnsByTable.TryGetValue(table, out var cols))
             {
                 continue;
             }
 
-            var stmt = TryBuildInsertOneRow(table, cols);
+            string? stmt = TryBuildInsertOneRow(table, cols);
             if (stmt is not null)
             {
                 sql.Add(stmt);
@@ -56,8 +56,8 @@ public static class SeedSqlGenerator
         RelationalSchemaModel schema,
         IReadOnlyList<TableColumnMetadata> cols)
     {
-        var dupValue = "adv-dup";
-        var t = s.Table;
+        string dupValue = "adv-dup";
+        string t = s.Table;
         var insertCols = new List<string>();
         var vals1 = new List<string>();
         var vals2 = new List<string>();
@@ -82,7 +82,7 @@ public static class SeedSqlGenerator
             }
             else
             {
-                var lit = DefaultLiteral(c, seed: 1);
+                string lit = DefaultLiteral(c, seed: 1);
                 vals1.Add(lit);
                 vals2.Add(AdjustLiteralForSecondRow(c, lit));
             }
@@ -93,8 +93,8 @@ public static class SeedSqlGenerator
             return [];
         }
 
-        var tableQ = SqlDialect.Q(t);
-        var colList = string.Join(", ", insertCols.Select(c => SqlDialect.Q(c)));
+        string tableQ = SqlDialect.Q(t);
+        string colList = string.Join(", ", insertCols.Select(c => SqlDialect.Q(c)));
         return
         [
             $"INSERT INTO {tableQ} ({colList}) VALUES ({string.Join(", ", vals1)});",
@@ -132,7 +132,7 @@ public static class SeedSqlGenerator
             }
 
             insertCols.Add(c.Name);
-            var fkIdx = IndexOfColumn(s.Columns, c.Name);
+            int fkIdx = IndexOfColumn(s.Columns, c.Name);
             if (fkIdx >= 0 && s.PrincipalColumns is { Count: > 0 })
             {
                 vals.Add(OrphanFkLiteral(c));
@@ -148,14 +148,14 @@ public static class SeedSqlGenerator
             return [];
         }
 
-        var tableQ = SqlDialect.Q(s.Table);
-        var colList = string.Join(", ", insertCols.Select(c => SqlDialect.Q(c)));
+        string tableQ = SqlDialect.Q(s.Table);
+        string colList = string.Join(", ", insertCols.Select(c => SqlDialect.Q(c)));
         return [$"INSERT INTO {tableQ} ({colList}) VALUES ({string.Join(", ", vals)});"];
     }
 
     private static int IndexOfColumn(IReadOnlyList<string> columns, string name)
     {
-        for (var i = 0; i < columns.Count; i++)
+        for (int i = 0; i < columns.Count; i++)
         {
             if (string.Equals(columns[i], name, StringComparison.OrdinalIgnoreCase))
             {
@@ -193,7 +193,7 @@ public static class SeedSqlGenerator
             return [];
         }
 
-        var target = s.Columns[0];
+        string target = s.Columns[0];
         var insertCols = new List<string>();
         var vals = new List<string>();
         foreach (var c in cols.OrderBy(static x => x.Ordinal))
@@ -223,8 +223,8 @@ public static class SeedSqlGenerator
             return [];
         }
 
-        var tableQ = SqlDialect.Q(s.Table);
-        var colList = string.Join(", ", insertCols.Select(c => SqlDialect.Q(c)));
+        string tableQ = SqlDialect.Q(s.Table);
+        string colList = string.Join(", ", insertCols.Select(c => SqlDialect.Q(c)));
         return [$"INSERT INTO {tableQ} ({colList}) VALUES ({string.Join(", ", vals)});"];
     }
 
@@ -238,10 +238,10 @@ public static class SeedSqlGenerator
             return [];
         }
 
-        var newMax = s.NewMaxLength ?? 1;
-        var payload = new string('x', Math.Max(newMax + 16, newMax * 2));
-        var tableQ = SqlDialect.Q(s.Table);
-        var colQ = SqlDialect.Q(s.Columns[0]);
+        int newMax = s.NewMaxLength ?? 1;
+        string payload = new string('x', Math.Max(newMax + 16, newMax * 2));
+        string tableQ = SqlDialect.Q(s.Table);
+        string colQ = SqlDialect.Q(s.Columns[0]);
         return [$"UPDATE {tableQ} SET {colQ} = {SqlString(payload)};"];
     }
 
@@ -274,14 +274,14 @@ public static class SeedSqlGenerator
             return null;
         }
 
-        var tableQ = SqlDialect.Q(table);
-        var colList = string.Join(", ", insertCols.Select(c => SqlDialect.Q(c)));
+        string tableQ = SqlDialect.Q(table);
+        string colList = string.Join(", ", insertCols.Select(c => SqlDialect.Q(c)));
         return $"INSERT INTO {tableQ} ({colList}) VALUES ({string.Join(", ", vals)});";
     }
 
     private static string DefaultLiteral(TableColumnMetadata c, int seed)
     {
-        var t = c.DeclaredType ?? "";
+        string t = c.DeclaredType ?? "";
         if (t.Contains("INT", StringComparison.OrdinalIgnoreCase)
             && !t.Contains("POINT", StringComparison.OrdinalIgnoreCase))
         {
@@ -326,7 +326,7 @@ public static class SeedSqlGenerator
     private static string SqlString(string s)
     {
         var sb = new StringBuilder("N'");
-        foreach (var ch in s)
+        foreach (char ch in s)
         {
             if (ch == '\'')
             {

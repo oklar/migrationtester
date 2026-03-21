@@ -13,7 +13,7 @@ public static class ActiveProviderResolver
         var opts = context.GetService<IDbContextOptions>();
         foreach (var ext in opts.Extensions)
         {
-            var n = ext.GetType().FullName ?? "";
+            string n = ext.GetType().FullName ?? "";
             if (n.Contains("SqlServer", StringComparison.Ordinal))
             {
                 return SqlServerProvider;

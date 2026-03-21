@@ -58,16 +58,16 @@ public static class MigrationAdversaryRunner
         using var context = options.CreateContext();
         var assembly = context.GetService<IMigrationsAssembly>();
         var all = context.Database.GetMigrations().ToList();
-        var fromResolved = assembly.FindMigrationId(fromMigrationIdInclusive);
-        var toResolved = assembly.FindMigrationId(toMigrationIdInclusive);
+        string? fromResolved = assembly.FindMigrationId(fromMigrationIdInclusive);
+        string? toResolved = assembly.FindMigrationId(toMigrationIdInclusive);
         if (string.IsNullOrEmpty(fromResolved) || string.IsNullOrEmpty(toResolved))
         {
             throw new InvalidOperationException(
                 $"RunRangeAsync: could not resolve migration id(s). From: '{fromMigrationIdInclusive}' -> '{fromResolved}', To: '{toMigrationIdInclusive}' -> '{toResolved}'.");
         }
 
-        var i0 = all.IndexOf(fromResolved);
-        var i1 = all.IndexOf(toResolved);
+        int i0 = all.IndexOf(fromResolved);
+        int i1 = all.IndexOf(toResolved);
         if (i0 < 0 || i1 < 0)
         {
             throw new InvalidOperationException(
@@ -120,14 +120,14 @@ public static class MigrationAdversaryRunner
         var assembly = context.GetService<IMigrationsAssembly>();
         var wanted = new List<string>();
         var idSet = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var raw in options.MigrationIds)
+        foreach (string raw in options.MigrationIds)
         {
             if (string.IsNullOrWhiteSpace(raw))
             {
                 throw new ArgumentException("MigrationIds contains an empty entry.", nameof(options));
             }
 
-            var resolved = assembly.FindMigrationId(raw);
+            string? resolved = assembly.FindMigrationId(raw);
             if (string.IsNullOrEmpty(resolved))
             {
                 throw new InvalidOperationException($"Migration '{raw}' not found.");
@@ -157,7 +157,7 @@ public static class MigrationAdversaryRunner
         CancellationToken cancellationToken)
     {
         var results = new List<MigrationStepResult>(migrationIds.Count);
-        foreach (var id in migrationIds)
+        foreach (string id in migrationIds)
         {
             var sw = Stopwatch.StartNew();
             var single = new MigrationAdversaryOptions
@@ -195,20 +195,20 @@ public static class MigrationAdversaryRunner
     {
         var assembly = context.GetService<IMigrationsAssembly>();
         var ordered = context.Database.GetMigrations().ToList();
-        var target = assembly.FindMigrationId(options.TargetMigrationId);
+        string? target = assembly.FindMigrationId(options.TargetMigrationId);
         if (string.IsNullOrEmpty(target))
         {
             throw new InvalidOperationException($"Migration '{options.TargetMigrationId}' not found.");
         }
 
-        var idx = ordered.IndexOf(target);
+        int idx = ordered.IndexOf(target);
         if (idx < 0)
         {
             throw new InvalidOperationException($"Migration '{options.TargetMigrationId}' not found (resolved: '{target}').");
         }
 
-        var prev = idx > 0 ? ordered[idx - 1] : null;
-        var activeProvider = options.ActiveProvider ?? ActiveProviderResolver.Resolve(context);
+        string? prev = idx > 0 ? ordered[idx - 1] : null;
+        string activeProvider = options.ActiveProvider ?? ActiveProviderResolver.Resolve(context);
 
         var migrationType = assembly.Migrations[target];
         object? instance;
@@ -231,7 +231,7 @@ public static class MigrationAdversaryRunner
         var migration = (Migration)instance;
 
         var ops = MigrationOperationCapture.Capture(migration, activeProvider);
-        var hasRawSql = MigrationOperationCapture.ContainsRawSql(ops);
+        bool hasRawSql = MigrationOperationCapture.ContainsRawSql(ops);
         var warnings = new List<string>();
         if (hasRawSql)
         {
@@ -256,7 +256,7 @@ public static class MigrationAdversaryRunner
         var scenarios = ScenarioPlanner.Plan(ops, tables);
 
         var sqlLog = new List<string>();
-        foreach (var sql in SeedSqlGenerator.BaselineInserts(schema))
+        foreach (string sql in SeedSqlGenerator.BaselineInserts(schema))
         {
             await context.Database.ExecuteSqlRawAsync(sql, cancellationToken).ConfigureAwait(false);
             sqlLog.Add(sql);
@@ -264,7 +264,7 @@ public static class MigrationAdversaryRunner
 
         foreach (var scenario in scenarios.Where(static s => !s.Skipped))
         {
-            foreach (var sql in SeedSqlGenerator.AdversarialStatements(scenario, schema))
+            foreach (string sql in SeedSqlGenerator.AdversarialStatements(scenario, schema))
             {
                 await context.Database.ExecuteSqlRawAsync(sql, cancellationToken).ConfigureAwait(false);
                 sqlLog.Add(sql);
@@ -285,7 +285,7 @@ public static class MigrationAdversaryRunner
         }
         catch (Exception ex)
         {
-            var hint = BuildHints(scenarios.Where(static s => !s.Skipped));
+            string hint = BuildHints(scenarios.Where(static s => !s.Skipped));
             return new MigrationAdversaryResult
             {
                 MigrationSucceeded = false,

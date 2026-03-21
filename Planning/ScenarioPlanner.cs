@@ -49,12 +49,12 @@ public static class ScenarioPlanner
         CreateIndexOperation idx,
         HashSet<string> tables)
     {
-        var table = idx.Table;
-        var present = tables.Contains(table);
-        var hasFilter = !string.IsNullOrWhiteSpace(idx.Filter);
+        string table = idx.Table;
+        bool present = tables.Contains(table);
+        bool hasFilter = !string.IsNullOrWhiteSpace(idx.Filter);
         var columns = idx.Columns?.ToList() ?? [];
-        var noColumns = columns.Count == 0;
-        var skipped = !present || hasFilter || noColumns;
+        bool noColumns = columns.Count == 0;
+        bool skipped = !present || hasFilter || noColumns;
         string? skipReason = null;
         if (!present)
         {
@@ -85,10 +85,10 @@ public static class ScenarioPlanner
         AddUniqueConstraintOperation uq,
         HashSet<string> tables)
     {
-        var table = uq.Table;
-        var present = tables.Contains(table);
+        string table = uq.Table;
+        bool present = tables.Contains(table);
         var columns = uq.Columns?.ToList() ?? [];
-        var noColumns = columns.Count == 0;
+        bool noColumns = columns.Count == 0;
         return new AdversaryScenario
         {
             Kind = AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint,
@@ -109,11 +109,11 @@ public static class ScenarioPlanner
         AddForeignKeyOperation fk,
         HashSet<string> tables)
     {
-        var dep = fk.Table;
-        var principal = fk.PrincipalTable;
-        var depPresent = tables.Contains(dep);
-        var principalPresent = tables.Contains(principal);
-        var present = depPresent && principalPresent;
+        string dep = fk.Table;
+        string principal = fk.PrincipalTable;
+        bool depPresent = tables.Contains(dep);
+        bool principalPresent = tables.Contains(principal);
+        bool present = depPresent && principalPresent;
         return new AdversaryScenario
         {
             Kind = AdversaryScenarioKind.ForeignKeyOrphan,
@@ -134,8 +134,8 @@ public static class ScenarioPlanner
         AlterColumnOperation alter,
         HashSet<string> tables)
     {
-        var table = alter.Table;
-        var present = tables.Contains(table);
+        string table = alter.Table;
+        bool present = tables.Contains(table);
         var oldCol = alter.OldColumn;
 
         if (oldCol is { IsNullable: true } && alter.IsNullable == false)
@@ -152,8 +152,8 @@ public static class ScenarioPlanner
             };
         }
 
-        var oldMax = oldCol?.MaxLength;
-        var newMax = alter.MaxLength;
+        int? oldMax = oldCol?.MaxLength;
+        int? newMax = alter.MaxLength;
         if (newMax is int nm && nm > 0 && (oldMax is null || oldMax > nm))
         {
             yield return new AdversaryScenario
@@ -175,8 +175,8 @@ public static class ScenarioPlanner
         AddCheckConstraintOperation chk,
         HashSet<string> tables)
     {
-        var table = chk.Table;
-        var present = tables.Contains(table);
+        string table = chk.Table;
+        bool present = tables.Contains(table);
         return new AdversaryScenario
         {
             Kind = AdversaryScenarioKind.CheckConstraintViolation,

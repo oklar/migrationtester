@@ -25,8 +25,8 @@ public static class RepairHintCatalog
 
     private static string DuplicateUnique(AdversaryScenario s)
     {
-        var cols = string.Join(", ", s.Columns.Select(c => SqlDialect.Q(c)));
-        var table = SqlDialect.Q(s.Table);
+        string cols = string.Join(", ", s.Columns.Select(c => SqlDialect.Q(c)));
+        string table = SqlDialect.Q(s.Table);
         return $"""
             -- Deduplicate before creating the unique index/constraint.
             -- Example: keep one row per distinct ({cols}), e.g. lowest primary key:
@@ -38,10 +38,10 @@ public static class RepairHintCatalog
 
     private static string ForeignKeyOrphan(AdversaryScenario s)
     {
-        var dep = SqlDialect.Q(s.Table);
-        var principal = s.PrincipalTable is { } p ? SqlDialect.Q(p) : "[PrincipalTable]";
-        var childCols = string.Join(", ", s.Columns.Select(SqlDialect.Q));
-        var parentCols = string.Join(", ", (s.PrincipalColumns ?? []).Select(SqlDialect.Q));
+        string dep = SqlDialect.Q(s.Table);
+        string principal = s.PrincipalTable is { } p ? SqlDialect.Q(p) : "[PrincipalTable]";
+        string childCols = string.Join(", ", s.Columns.Select(SqlDialect.Q));
+        string parentCols = string.Join(", ", (s.PrincipalColumns ?? []).Select(SqlDialect.Q));
         return $"""
             -- Remove or fix rows in {dep} whose ({childCols}) do not exist in {principal} ({parentCols}).
             -- Pattern: DELETE FROM {dep} c WHERE NOT EXISTS (
@@ -52,8 +52,8 @@ public static class RepairHintCatalog
 
     private static string NonNullable(AdversaryScenario s)
     {
-        var col = SqlDialect.Q(s.Columns[0]);
-        var table = SqlDialect.Q(s.Table);
+        string col = SqlDialect.Q(s.Columns[0]);
+        string table = SqlDialect.Q(s.Table);
         return $"""
             -- Column {col} becomes NOT NULL: set a default for existing NULLs before the ALTER.
             UPDATE {table} SET {col} = <sentinel_or_derived_value> WHERE {col} IS NULL;
@@ -62,9 +62,9 @@ public static class RepairHintCatalog
 
     private static string MaxLength(AdversaryScenario s)
     {
-        var col = SqlDialect.Q(s.Columns[0]);
-        var table = SqlDialect.Q(s.Table);
-        var n = s.NewMaxLength?.ToString() ?? "?";
+        string col = SqlDialect.Q(s.Columns[0]);
+        string table = SqlDialect.Q(s.Table);
+        string n = s.NewMaxLength?.ToString() ?? "?";
         return $"""
             UPDATE {table} SET {col} = LEFT({col}, {n}) WHERE LEN({col}) > {n};
             """;

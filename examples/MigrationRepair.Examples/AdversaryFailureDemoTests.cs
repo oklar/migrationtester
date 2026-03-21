@@ -55,7 +55,7 @@ public sealed class AdversaryFailureDemoTests
 
         Assert.Equal(9, steps.Count);
 
-        for (var i = 0; i < 8; i++)
+        for (int i = 0; i < 8; i++)
         {
             Assert.True(steps[i].Result.MigrationSucceeded, steps[i].Result.FailureSummary ?? steps[i].Result.Exception?.ToString());
         }

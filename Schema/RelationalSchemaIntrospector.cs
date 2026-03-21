@@ -12,7 +12,7 @@ public static class RelationalSchemaIntrospector
         DbConnection connection,
         CancellationToken cancellationToken = default)
     {
-        var shouldClose = connection.State == ConnectionState.Closed;
+        bool shouldClose = connection.State == ConnectionState.Closed;
         if (shouldClose)
         {
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -54,7 +54,7 @@ public static class RelationalSchemaIntrospector
         }
 
         var columns = new Dictionary<string, List<TableColumnMetadata>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var table in tables)
+        foreach (string table in tables)
         {
             var list = new List<TableColumnMetadata>();
             await using (var cmd = connection.CreateCommand())
@@ -84,12 +84,12 @@ public static class RelationalSchemaIntrospector
                 await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
                 while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
-                    var colName = reader.GetString(0);
-                    var nullable = reader.GetBoolean(2);
-                    var dataType = reader.GetString(3);
-                    var isPk = reader.GetInt32(4) != 0;
-                    var isIdentity = reader.GetInt32(5) != 0;
-                    var isRowVersion = string.Equals(dataType, "rowversion", StringComparison.OrdinalIgnoreCase)
+                    string colName = reader.GetString(0);
+                    bool nullable = reader.GetBoolean(2);
+                    string dataType = reader.GetString(3);
+                    bool isPk = reader.GetInt32(4) != 0;
+                    bool isIdentity = reader.GetInt32(5) != 0;
+                    bool isRowVersion = string.Equals(dataType, "rowversion", StringComparison.OrdinalIgnoreCase)
                         || string.Equals(dataType, "timestamp", StringComparison.OrdinalIgnoreCase);
 
                     list.Add(new TableColumnMetadata
@@ -129,12 +129,12 @@ public static class RelationalSchemaIntrospector
             var group = new Dictionary<int, List<(string DepTable, string From, string PrinTable, string To, int Ord)>>();
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                var oid = reader.GetInt32(0);
-                var depTable = reader.GetString(1);
-                var depCol = reader.GetString(2);
-                var prinTable = reader.GetString(3);
-                var prinCol = reader.GetString(4);
-                var ord = reader.GetInt32(5);
+                int oid = reader.GetInt32(0);
+                string depTable = reader.GetString(1);
+                string depCol = reader.GetString(2);
+                string prinTable = reader.GetString(3);
+                string prinCol = reader.GetString(4);
+                int ord = reader.GetInt32(5);
                 if (!group.TryGetValue(oid, out var rows))
                 {
                     rows = [];

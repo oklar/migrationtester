@@ -13,7 +13,7 @@ public static class TableInsertOrder
         var adj = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
         var indegree = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var t in tables)
+        foreach (string t in tables)
         {
             adj[t] = [];
             indegree[t] = 0;
@@ -37,9 +37,9 @@ public static class TableInsertOrder
         var result = new List<string>();
         while (q.Count > 0)
         {
-            var n = q.Dequeue();
+            string n = q.Dequeue();
             result.Add(n);
-            foreach (var m in adj[n])
+            foreach (string m in adj[n])
             {
                 indegree[m]--;
                 if (indegree[m] == 0)

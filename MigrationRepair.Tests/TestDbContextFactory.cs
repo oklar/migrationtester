@@ -7,7 +7,7 @@ public sealed class TestDbContextFactory : IDesignTimeDbContextFactory<TestDbCon
 {
     public TestDbContext CreateDbContext(string[] args)
     {
-        var cs = TestSqlServerConfig.DesignTimeConnectionString;
+        string cs = TestSqlServerConfig.DesignTimeConnectionString;
         var o = new DbContextOptionsBuilder<TestDbContext>()
             .UseSqlServer(cs)
             .Options;

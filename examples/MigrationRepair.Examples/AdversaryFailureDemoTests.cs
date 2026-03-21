@@ -22,8 +22,7 @@ public sealed class AdversaryFailureDemoTests
     private static MigrationAdversaryBatchOptions Batch =>
         new()
         {
-            CreateContext = () => new ScenarioDbContext(TestOptions),
-            EnableFuzzing = false
+            CreateContext = () => new ScenarioDbContext(TestOptions)
         };
 
     /// <summary>
@@ -36,8 +35,7 @@ public sealed class AdversaryFailureDemoTests
             new MigrationAdversaryOptions
             {
                 CreateContext = Batch.CreateContext,
-                TargetMigrationId = HostileMigrationId,
-                EnableFuzzing = false
+                TargetMigrationId = HostileMigrationId
             },
             TestContext.Current.CancellationToken);
 

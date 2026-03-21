@@ -16,10 +16,4 @@ public sealed class MigrationAdversaryBatchOptions
 
     /// <summary>Override when capture must match a non-standard MigrationBuilder provider key.</summary>
     public string? ActiveProvider { get; init; }
-
-    public bool EnableFuzzing { get; init; }
-
-    public int FuzzIterationCount { get; init; } = 8;
-
-    public int FuzzSeed { get; init; } = 42;
 }

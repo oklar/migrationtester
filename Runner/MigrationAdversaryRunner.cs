@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using MigrationRepair.Capture;
-using MigrationRepair.Fuzzing;
 using MigrationRepair.Hints;
 using MigrationRepair.Planning;
 using MigrationRepair.Schema;
@@ -165,10 +164,7 @@ public static class MigrationAdversaryRunner
             {
                 CreateContext = batch.CreateContext,
                 TargetMigrationId = id,
-                ActiveProvider = batch.ActiveProvider,
-                EnableFuzzing = batch.EnableFuzzing,
-                FuzzIterationCount = batch.FuzzIterationCount,
-                FuzzSeed = batch.FuzzSeed
+                ActiveProvider = batch.ActiveProvider
             };
 
             var context = batch.CreateContext();
@@ -264,12 +260,6 @@ public static class MigrationAdversaryRunner
         {
             await context.Database.ExecuteSqlRawAsync(sql, cancellationToken).ConfigureAwait(false);
             sqlLog.Add(sql);
-        }
-
-        if (options.EnableFuzzing)
-        {
-            await MigrationFuzzer.RunAsync(context, schema, options.FuzzSeed, options.FuzzIterationCount, sqlLog, cancellationToken)
-                .ConfigureAwait(false);
         }
 
         foreach (var scenario in scenarios.Where(static s => !s.Skipped))

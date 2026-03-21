@@ -19,8 +19,7 @@ public sealed class SqlServerAdversaryRunnerTests
             new MigrationAdversaryOptions
             {
                 CreateContext = () => new TestDbContext(options),
-                TargetMigrationId = "20260319180720_Initial",
-                EnableFuzzing = false
+                TargetMigrationId = "20260319180720_Initial"
             },
             TestContext.Current.CancellationToken);
 
@@ -38,8 +37,7 @@ public sealed class SqlServerAdversaryRunnerTests
             new MigrationAdversaryOptions
             {
                 CreateContext = () => new TestDbContext(options),
-                TargetMigrationId = "20260319180738_AddUniqueCode",
-                EnableFuzzing = false
+                TargetMigrationId = "20260319180738_AddUniqueCode"
             },
             TestContext.Current.CancellationToken);
 

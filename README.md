@@ -7,7 +7,7 @@ NuGet library for **migration safety** on **Microsoft SQL Server**: in integrati
 ## Why use this package?
 
 - **Greenfield or long histories:** Whether you have two migrations or fifty, you can **loop the full chain** (or a subset) and see which steps break on realistic dirty data.
-- **Deterministic + optional fuzz:** Built-in scenarios cover **unique indexes**, **foreign keys**, **nullable → required**, **max-length shrink**, and **check** guidance; optional fuzz adds extra legal inserts.
+- **Deterministic scenarios:** **unique indexes**, **foreign keys**, **nullable → required**, **max-length shrink**, and **check** guidance (check rows are not auto-generated).
 - **Honest limits:** Operations come from **`MigrationBuilder` fluency only**—`migrationBuilder.Sql(...)` is **flagged**, not parsed (false negatives possible). Introspection targets **`dbo`** user tables.
 
 ## Prerequisites
@@ -24,8 +24,7 @@ var opts = new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(cs + ";Datab
 var result = await MigrationAdversaryRunner.RunAsync(new MigrationAdversaryOptions
 {
     CreateContext = () => new AppDbContext(opts.Options),
-    TargetMigrationId = "20240101120000_MyMigration",
-    EnableFuzzing = false
+    TargetMigrationId = "20240101120000_MyMigration"
 });
 
 Assert.True(result.MigrationSucceeded, result.FailureSummary ?? result.Exception?.Message);
@@ -36,8 +35,7 @@ Assert.True(result.MigrationSucceeded, result.FailureSummary ?? result.Exception
 ```csharp
 var batch = new MigrationAdversaryBatchOptions
 {
-    CreateContext = () => new AppDbContext(opts.Options),
-    EnableFuzzing = false
+    CreateContext = () => new AppDbContext(opts.Options)
     // MigrationIds = null  → every migration from Database.GetMigrations() in order
 };
 
@@ -98,7 +96,7 @@ Defaults: **`TestSqlServerConfig`** (`MIGRATION_REPAIR_SQL_TEST`, **`MIGRATION_R
 ## Limitations
 
 - **`migrationBuilder.Sql`**: not analyzed; **`ContainsRawSqlInMigration`** and warnings only.
-- **Not exhaustive “any data”**: deterministic scenarios + optional fuzz; not full property-based generation.
+- **Not exhaustive “any data”**: deterministic scenarios only; not full property-based generation.
 - **SQL Server–only** implementation (provider alignment: test against the same engine as production migrations).
 - **First migration**: no N−1 tables; uses an empty schema model until **`Migrate(N)`** creates the database.
 - **Custom `Up()` ordering** or data-fix steps can still yield **false negatives**.

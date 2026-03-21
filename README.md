@@ -103,9 +103,9 @@ Defaults: **`TestSqlServerConfig`** (`MIGRATION_REPAIR_SQL_TEST`, **`MIGRATION_R
 - **First migration**: no N−1 tables; uses an empty schema model until **`Migrate(N)`** creates the database.
 - **Custom `Up()` ordering** or data-fix steps can still yield **false negatives**.
 
-## Nested test project
+## Nested test project and example
 
-`MigrationRepair.Tests/` is excluded from the main library’s compile glob in `MigrationRepair.csproj`.
+`MigrationRepair.Tests/` and **`examples/MigrationRepair.Examples/`** are excluded from the main library’s compile glob in `MigrationRepair.csproj`. The **MigrationRepair.Examples** project is a NuGet consumer sample (SQL Server, EF migrations, adversary demo tests); see **`examples/MigrationRepair.Examples/README.md`**. It does not affect published **NuGet** package size.
 
 ## Local tooling
 

@@ -31,6 +31,9 @@
     <Compile Remove="MigrationRepair.Tests/**" />
     <EmbeddedResource Remove="MigrationRepair.Tests/**" />
     <None Remove="MigrationRepair.Tests/**" />
+    <Compile Remove="examples/**" />
+    <EmbeddedResource Remove="examples/**" />
+    <None Remove="examples/**" />
   </ItemGroup>
 
 </Project>

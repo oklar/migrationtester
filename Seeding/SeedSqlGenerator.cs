@@ -58,7 +58,6 @@ public static class SeedSqlGenerator
         RelationalSchemaModel schema,
         IReadOnlyList<TableColumnMetadata> cols)
     {
-        string dupValue = "adv-dup";
         string t = s.Table;
         var insertCols = new List<string>();
         var vals1 = new List<string>();
@@ -74,8 +73,9 @@ public static class SeedSqlGenerator
             insertCols.Add(c.Name);
             if (s.Columns.Any(u => string.Equals(u, c.Name, StringComparison.OrdinalIgnoreCase)))
             {
-                vals1.Add(SqlString(dupValue));
-                vals2.Add(SqlString(dupValue));
+                string dup = DuplicateLiteral(c);
+                vals1.Add(dup);
+                vals2.Add(dup);
             }
             else if (c.IsPrimaryKey)
             {
@@ -106,7 +106,8 @@ public static class SeedSqlGenerator
 
     private static string AdjustLiteralForSecondRow(TableColumnMetadata c, string firstLit)
     {
-        if (c.DeclaredType?.Contains("INT", StringComparison.OrdinalIgnoreCase) == true && firstLit == "0")
+        string normalized = NormalizeTypeName(c.DeclaredType ?? "");
+        if (normalized is "TINYINT" or "SMALLINT" or "INT" or "BIGINT" && firstLit == "0")
         {
             return "1";
         }
@@ -117,6 +118,24 @@ public static class SeedSqlGenerator
         }
 
         return firstLit;
+    }
+
+    private static string DuplicateLiteral(TableColumnMetadata c)
+    {
+        string normalized = NormalizeTypeName(c.DeclaredType ?? "");
+        return normalized switch
+        {
+            "TINYINT" or "SMALLINT" or "INT" or "BIGINT" => "42",
+            "REAL" or "FLOAT" or "DOUBLE" => "42.0",
+            "DECIMAL" or "NUMERIC" or "MONEY" or "SMALLMONEY" => "42",
+            "BIT" => "1",
+            "UNIQUEIDENTIFIER" => "'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA'",
+            "DATE" or "DATETIME" or "DATETIME2" or "SMALLDATETIME" => "'2000-01-01'",
+            "TIME" => "'00:00:00'",
+            "DATETIMEOFFSET" => "'2000-01-01T00:00:00+00:00'",
+            "BINARY" or "VARBINARY" or "IMAGE" => "0xDEAD",
+            _ => SqlString("adv-dup")
+        };
     }
 
     private static IReadOnlyList<string> OrphanRow(
@@ -170,19 +189,13 @@ public static class SeedSqlGenerator
 
     private static string OrphanFkLiteral(TableColumnMetadata c)
     {
-        if (c.DeclaredType?.Contains("INT", StringComparison.OrdinalIgnoreCase) == true
-            || c.DeclaredType?.Contains("BIGINT", StringComparison.OrdinalIgnoreCase) == true)
+        string normalized = NormalizeTypeName(c.DeclaredType ?? "");
+        return normalized switch
         {
-            return "999999999";
-        }
-
-        if (c.DeclaredType?.Contains("uniqueidentifier", StringComparison.OrdinalIgnoreCase) == true
-            || c.DeclaredType?.Contains("GUID", StringComparison.OrdinalIgnoreCase) == true)
-        {
-            return "'00000000-0000-0000-0000-000000000099'";
-        }
-
-        return "'__orphan_fk__'";
+            "TINYINT" or "SMALLINT" or "INT" or "BIGINT" => "999999999",
+            "UNIQUEIDENTIFIER" => "'00000000-0000-0000-0000-000000000099'",
+            _ => "'__orphan_fk__'"
+        };
     }
 
     private static IReadOnlyList<string> NullOutColumn(
@@ -196,6 +209,12 @@ public static class SeedSqlGenerator
         }
 
         string target = s.Columns[0];
+        var targetCol = cols.FirstOrDefault(c => string.Equals(c.Name, target, StringComparison.OrdinalIgnoreCase));
+        if (targetCol is not { IsNullable: true })
+        {
+            return [];
+        }
+
         var insertCols = new List<string>();
         var vals = new List<string>();
         foreach (var c in cols.OrderBy(static x => x.Ordinal))
@@ -369,58 +388,20 @@ public static class SeedSqlGenerator
 
     private static string DefaultLiteral(TableColumnMetadata c, int seed)
     {
-        string t = c.DeclaredType ?? "";
-        if (t.Contains("INT", StringComparison.OrdinalIgnoreCase)
-            && !t.Contains("POINT", StringComparison.OrdinalIgnoreCase))
+        string normalized = NormalizeTypeName(c.DeclaredType ?? "");
+        return normalized switch
         {
-            return seed.ToString();
-        }
-
-        if (t.Contains("REAL", StringComparison.OrdinalIgnoreCase)
-            || t.Contains("FLOA", StringComparison.OrdinalIgnoreCase)
-            || t.Contains("DOUBLE", StringComparison.OrdinalIgnoreCase)
-            || t.Contains("DECIMAL", StringComparison.OrdinalIgnoreCase)
-            || t.Contains("NUMERIC", StringComparison.OrdinalIgnoreCase)
-            || t.Contains("MONEY", StringComparison.OrdinalIgnoreCase))
-        {
-            return seed.ToString();
-        }
-
-        if (string.Equals(t, "bit", StringComparison.OrdinalIgnoreCase))
-        {
-            return "0";
-        }
-
-        if (t.Contains("binary", StringComparison.OrdinalIgnoreCase)
-            || t.Contains("BLOB", StringComparison.OrdinalIgnoreCase))
-        {
-            return "0x00";
-        }
-
-        if (string.Equals(t, "uniqueidentifier", StringComparison.OrdinalIgnoreCase))
-        {
-            return $"'{new Guid(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, (byte)seed)}'";
-        }
-
-        if (string.Equals(t, "time", StringComparison.OrdinalIgnoreCase))
-        {
-            return "'00:00:00'";
-        }
-
-        if (string.Equals(t, "datetimeoffset", StringComparison.OrdinalIgnoreCase))
-        {
-            return "'2000-01-01T00:00:00+00:00'";
-        }
-
-        if (string.Equals(t, "date", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(t, "datetime", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(t, "datetime2", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(t, "smalldatetime", StringComparison.OrdinalIgnoreCase))
-        {
-            return "'2000-01-01'";
-        }
-
-        return SqlString($"s{seed}");
+            "TINYINT" or "SMALLINT" or "INT" or "BIGINT" => seed.ToString(),
+            "REAL" or "FLOAT" or "DOUBLE" => seed.ToString(),
+            "DECIMAL" or "NUMERIC" or "MONEY" or "SMALLMONEY" => seed.ToString(),
+            "BIT" => "0",
+            "BINARY" or "VARBINARY" or "IMAGE" => "0x00",
+            "UNIQUEIDENTIFIER" => $"'{new Guid(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, (byte)seed)}'",
+            "TIME" => "'00:00:00'",
+            "DATETIMEOFFSET" => "'2000-01-01T00:00:00+00:00'",
+            "DATE" or "DATETIME" or "DATETIME2" or "SMALLDATETIME" => "'2000-01-01'",
+            _ => SqlString($"s{seed}")
+        };
     }
 
     private static string SqlString(string s)

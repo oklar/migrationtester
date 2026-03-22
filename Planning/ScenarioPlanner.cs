@@ -294,18 +294,7 @@ public static class ScenarioPlanner
     {
         var oldCat = CategorizeType(oldType);
         var newCat = CategorizeType(newType);
-
-        if (oldCat == TypeCategory.Unknown || newCat == TypeCategory.Unknown)
-        {
-            return false;
-        }
-
-        if (oldCat == newCat)
-        {
-            return false;
-        }
-
-        return true;
+        return oldCat != TypeCategory.Unknown && newCat != TypeCategory.Unknown && oldCat != newCat;
     }
 
     private enum TypeCategory

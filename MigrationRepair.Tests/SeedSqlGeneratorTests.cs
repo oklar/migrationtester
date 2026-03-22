@@ -256,4 +256,85 @@ public sealed class SeedSqlGeneratorTests
 
         Assert.Contains(expectedFragment, result, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void AdversarialStatements_duplicate_unique_int_column_uses_numeric_literal()
+    {
+        var schema = SingleTableSchema("Items",
+            Col("Items", "Id", "int", ordinal: 0, pk: true, identity: true),
+            Col("Items", "Code", "int", ordinal: 1));
+
+        var scenario = new AdversaryScenario
+        {
+            Kind = AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint,
+            Name = "test",
+            Table = "Items",
+            Columns = ["Code"]
+        };
+
+        var sql = SeedSqlGenerator.AdversarialStatements(scenario, schema);
+
+        Assert.Equal(2, sql.Count);
+        Assert.All(sql, s => Assert.Contains("42", s));
+        Assert.All(sql, s => Assert.DoesNotContain("adv-dup", s, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void AdversarialStatements_duplicate_unique_guid_column_uses_guid_literal()
+    {
+        var schema = SingleTableSchema("Items",
+            Col("Items", "Id", "int", ordinal: 0, pk: true, identity: true),
+            Col("Items", "ExternalId", "uniqueidentifier", ordinal: 1));
+
+        var scenario = new AdversaryScenario
+        {
+            Kind = AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint,
+            Name = "test",
+            Table = "Items",
+            Columns = ["ExternalId"]
+        };
+
+        var sql = SeedSqlGenerator.AdversarialStatements(scenario, schema);
+
+        Assert.Equal(2, sql.Count);
+        Assert.All(sql, s => Assert.Contains("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA", s));
+        Assert.All(sql, s => Assert.DoesNotContain("adv-dup", s, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void AdversarialStatements_null_column_returns_empty_when_not_nullable_at_n_minus_1()
+    {
+        var schema = SingleTableSchema("Items",
+            Col("Items", "Id", "int", ordinal: 0, pk: true, identity: true),
+            Col("Items", "Name", "nvarchar", ordinal: 1, nullable: false));
+
+        var scenario = new AdversaryScenario
+        {
+            Kind = AdversaryScenarioKind.NonNullableColumnWithNull,
+            Name = "test",
+            Table = "Items",
+            Columns = ["Name"]
+        };
+
+        var sql = SeedSqlGenerator.AdversarialStatements(scenario, schema);
+
+        Assert.Empty(sql);
+    }
+
+    [Theory]
+    [InlineData("float(53)", "1")]
+    [InlineData("decimal(18,6)", "1")]
+    [InlineData("varbinary(100)", "0x00")]
+    [InlineData("nvarchar(max)", "s1")]
+    public void BaselineInserts_handles_parameterized_type_names(string sqlType, string expectedFragment)
+    {
+        var schema = SingleTableSchema("T",
+            Col("T", "Id", "int", ordinal: 0, pk: true, identity: true),
+            Col("T", "Val", sqlType, ordinal: 1));
+
+        var sql = SeedSqlGenerator.BaselineInserts(schema);
+
+        var stmt = Assert.Single(sql);
+        Assert.Contains(expectedFragment, stmt);
+    }
 }

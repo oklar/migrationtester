@@ -29,7 +29,7 @@ public static class MigrationAdversaryRunner
             throw new ArgumentException("MigrationIds, when set, must not be empty.", nameof(options));
         }
 
-        var ordered = ResolveMigrationsToRun(options);
+        var ordered = await ResolveMigrationsToRunAsync(options).ConfigureAwait(false);
         return await RunStepsAsync(options, ordered, cancellationToken).ConfigureAwait(false);
     }
 
@@ -53,7 +53,7 @@ public static class MigrationAdversaryRunner
                 "RunRangeAsync cannot be used when MigrationAdversaryBatchOptions.MigrationIds is set; use RunAllAsync with MigrationIds or RunRangeAsync alone.");
         }
 
-        using var context = options.CreateContext();
+        await using var context = options.CreateContext();
         var assembly = context.GetService<IMigrationsAssembly>();
         var all = context.Database.GetMigrations().ToList();
         string? fromResolved = assembly.FindMigrationId(fromMigrationIdInclusive);
@@ -99,9 +99,9 @@ public static class MigrationAdversaryRunner
         return await RunCoreAsync(context, options, cancellationToken).ConfigureAwait(false);
     }
 
-    private static IReadOnlyList<string> ResolveMigrationsToRun(MigrationAdversaryBatchOptions options)
+    private static async Task<IReadOnlyList<string>> ResolveMigrationsToRunAsync(MigrationAdversaryBatchOptions options)
     {
-        using var context = options.CreateContext();
+        await using var context = options.CreateContext();
         var all = context.Database.GetMigrations().ToList();
         if (options.MigrationIds is null)
         {

@@ -26,6 +26,11 @@ internal static class TableInsertOrder
                 continue;
             }
 
+            if (string.Equals(fk.DependentTable, fk.PrincipalTable, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             // Principal -> Dependent (principal must be inserted first)
             if (adj[fk.PrincipalTable].Add(fk.DependentTable))
             {

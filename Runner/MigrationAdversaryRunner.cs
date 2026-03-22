@@ -3,8 +3,6 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
-using MigrationRepair.Capture;
-using MigrationRepair.Hints;
 using MigrationRepair.Planning;
 using MigrationRepair.Schema;
 using MigrationRepair.Seeding;
@@ -97,15 +95,8 @@ public static class MigrationAdversaryRunner
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        var context = options.CreateContext();
-        try
-        {
-            return await RunCoreAsync(context, options, cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            context.Dispose();
-        }
+        await using var context = options.CreateContext();
+        return await RunCoreAsync(context, options, cancellationToken).ConfigureAwait(false);
     }
 
     private static IReadOnlyList<string> ResolveMigrationsToRun(MigrationAdversaryBatchOptions options)
@@ -181,7 +172,7 @@ public static class MigrationAdversaryRunner
             }
             finally
             {
-                context.Dispose();
+                await context.DisposeAsync().ConfigureAwait(false);
             }
         }
 

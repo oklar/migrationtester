@@ -1,10 +1,9 @@
-using MigrationRepair.Planning;
 using MigrationRepair.Seeding;
 
-namespace MigrationRepair.Hints;
+namespace MigrationRepair.Planning;
 
 /// <summary>
-/// SQL Server–oriented repair patterns for failed migrations.
+/// SQL Server-oriented repair patterns for failed migrations.
 /// </summary>
 public static class RepairHintCatalog
 {
@@ -17,8 +16,6 @@ public static class RepairHintCatalog
             AdversaryScenarioKind.NonNullableColumnWithNull => NonNullable(scenario),
             AdversaryScenarioKind.MaxLengthExceededAfterShrink => MaxLength(scenario),
             AdversaryScenarioKind.CheckConstraintViolation => Check(scenario),
-            AdversaryScenarioKind.UnsupportedOperation => "Review migration operations manually; add data cleanup or reorder steps.",
-            AdversaryScenarioKind.SkippedTableNotPresentAtNMinus1 => scenario.SkipReason ?? "Skipped.",
             _ => "Review migration and pre-migration data."
         };
     }

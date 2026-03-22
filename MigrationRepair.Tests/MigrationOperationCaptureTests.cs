@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
-using MigrationRepair.Capture;
 using MigrationRepair.Runner;
 using MigrationRepair.Tests.Migrations;
 using Xunit;

@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 
 namespace MigrationRepair.Runner;
 
-public static class ActiveProviderResolver
+internal static class ActiveProviderResolver
 {
     /// <summary>Provider key for <see cref="Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder"/> (SQL Server).</summary>
     public const string SqlServerProvider = "Microsoft.EntityFrameworkCore.SqlServer";
@@ -20,6 +20,7 @@ public static class ActiveProviderResolver
             }
         }
 
-        return SqlServerProvider;
+        throw new InvalidOperationException(
+            "No SQL Server provider extension found on this DbContext. MigrationRepair currently supports SQL Server only.");
     }
 }

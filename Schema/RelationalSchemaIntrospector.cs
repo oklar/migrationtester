@@ -6,7 +6,7 @@ namespace MigrationRepair.Schema;
 /// <summary>
 /// Reads table/column/FK metadata from a live SQL Server database (after migrate to N-1).
 /// </summary>
-public static class RelationalSchemaIntrospector
+internal static class RelationalSchemaIntrospector
 {
     public static async Task<RelationalSchemaModel> LoadAsync(
         DbConnection connection,
@@ -54,58 +54,61 @@ public static class RelationalSchemaIntrospector
         }
 
         var columns = new Dictionary<string, List<TableColumnMetadata>>(StringComparer.OrdinalIgnoreCase);
-        foreach (string table in tables)
+        await using (var cmd = connection.CreateCommand())
         {
-            var list = new List<TableColumnMetadata>();
-            await using (var cmd = connection.CreateCommand())
+            cmd.CommandText = """
+                SELECT
+                    t.name AS table_name,
+                    c.name AS col_name,
+                    c.column_id,
+                    c.is_nullable,
+                    ty.name AS type_name,
+                    CASE WHEN pk.column_id IS NOT NULL THEN 1 ELSE 0 END AS is_pk,
+                    CASE WHEN c.is_identity = 1 THEN 1 ELSE 0 END AS is_identity
+                FROM sys.columns c
+                INNER JOIN sys.tables t ON c.object_id = t.object_id
+                INNER JOIN sys.types ty ON c.user_type_id = ty.user_type_id
+                LEFT JOIN (
+                    SELECT ic.object_id, ic.column_id
+                    FROM sys.index_columns ic
+                    INNER JOIN sys.indexes i ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                    WHERE i.is_primary_key = 1
+                ) pk ON pk.object_id = c.object_id AND pk.column_id = c.column_id
+                WHERE t.schema_id = SCHEMA_ID('dbo')
+                  AND t.is_ms_shipped = 0
+                  AND t.name <> '__EFMigrationsHistory'
+                  AND c.is_computed = 0
+                ORDER BY t.name, c.column_id;
+                """;
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                cmd.CommandText = """
-                    SELECT
-                        c.name,
-                        c.column_id,
-                        c.is_nullable,
-                        ty.name AS type_name,
-                        CASE WHEN pk.column_id IS NOT NULL THEN 1 ELSE 0 END AS is_pk,
-                        CASE WHEN c.is_identity = 1 THEN 1 ELSE 0 END AS is_identity
-                    FROM sys.columns c
-                    INNER JOIN sys.tables t ON c.object_id = t.object_id
-                    INNER JOIN sys.types ty ON c.user_type_id = ty.user_type_id
-                    LEFT JOIN (
-                        SELECT ic.object_id, ic.column_id
-                        FROM sys.index_columns ic
-                        INNER JOIN sys.indexes i ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-                        WHERE i.is_primary_key = 1
-                    ) pk ON pk.object_id = c.object_id AND pk.column_id = c.column_id
-                    WHERE t.schema_id = SCHEMA_ID('dbo') AND t.name = @tbl
-                      AND c.is_computed = 0
-                    ORDER BY c.column_id;
-                    """;
-                cmd.Parameters.Add(CreateParam(cmd, "@tbl", table));
-                await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                string tableName = reader.GetString(0);
+                string colName = reader.GetString(1);
+                bool nullable = reader.GetBoolean(3);
+                string dataType = reader.GetString(4);
+                bool isPk = reader.GetInt32(5) != 0;
+                bool isIdentity = reader.GetInt32(6) != 0;
+                bool isRowVersion = string.Equals(dataType, "rowversion", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(dataType, "timestamp", StringComparison.OrdinalIgnoreCase);
+
+                if (!columns.TryGetValue(tableName, out var list))
                 {
-                    string colName = reader.GetString(0);
-                    bool nullable = reader.GetBoolean(2);
-                    string dataType = reader.GetString(3);
-                    bool isPk = reader.GetInt32(4) != 0;
-                    bool isIdentity = reader.GetInt32(5) != 0;
-                    bool isRowVersion = string.Equals(dataType, "rowversion", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(dataType, "timestamp", StringComparison.OrdinalIgnoreCase);
-
-                    list.Add(new TableColumnMetadata
-                    {
-                        TableName = table,
-                        Name = colName,
-                        Ordinal = list.Count,
-                        IsNullable = nullable,
-                        DeclaredType = dataType,
-                        IsPrimaryKey = isPk,
-                        IsAutoIncrement = isIdentity || isRowVersion
-                    });
+                    list = [];
+                    columns[tableName] = list;
                 }
-            }
 
-            columns[table] = list;
+                list.Add(new TableColumnMetadata
+                {
+                    TableName = tableName,
+                    Name = colName,
+                    Ordinal = list.Count,
+                    IsNullable = nullable,
+                    DeclaredType = dataType,
+                    IsPrimaryKey = isPk,
+                    IsAutoIncrement = isIdentity || isRowVersion
+                });
+            }
         }
 
         var fks = new List<ForeignKeyEdge>();
@@ -166,11 +169,4 @@ public static class RelationalSchemaIntrospector
         };
     }
 
-    private static DbParameter CreateParam(DbCommand cmd, string name, string value)
-    {
-        var p = cmd.CreateParameter();
-        p.ParameterName = name;
-        p.Value = value;
-        return p;
-    }
 }

@@ -292,7 +292,8 @@ public static class SeedSqlGenerator
             || t.Contains("FLOA", StringComparison.OrdinalIgnoreCase)
             || t.Contains("DOUBLE", StringComparison.OrdinalIgnoreCase)
             || t.Contains("DECIMAL", StringComparison.OrdinalIgnoreCase)
-            || t.Contains("NUMERIC", StringComparison.OrdinalIgnoreCase))
+            || t.Contains("NUMERIC", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("MONEY", StringComparison.OrdinalIgnoreCase))
         {
             return seed.ToString();
         }
@@ -302,14 +303,25 @@ public static class SeedSqlGenerator
             return "0";
         }
 
-        if (t.Contains("binary", StringComparison.OrdinalIgnoreCase))
+        if (t.Contains("binary", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("BLOB", StringComparison.OrdinalIgnoreCase))
         {
             return "0x00";
         }
 
-        if (t.Contains("BLOB", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(t, "uniqueidentifier", StringComparison.OrdinalIgnoreCase))
         {
-            return "0x00";
+            return $"'{new Guid(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, (byte)seed)}'";
+        }
+
+        if (string.Equals(t, "time", StringComparison.OrdinalIgnoreCase))
+        {
+            return "'00:00:00'";
+        }
+
+        if (string.Equals(t, "datetimeoffset", StringComparison.OrdinalIgnoreCase))
+        {
+            return "'2000-01-01T00:00:00+00:00'";
         }
 
         if (string.Equals(t, "date", StringComparison.OrdinalIgnoreCase)

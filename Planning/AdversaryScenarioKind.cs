@@ -6,7 +6,5 @@ public enum AdversaryScenarioKind
     ForeignKeyOrphan,
     NonNullableColumnWithNull,
     MaxLengthExceededAfterShrink,
-    CheckConstraintViolation,
-    UnsupportedOperation,
-    SkippedTableNotPresentAtNMinus1
+    CheckConstraintViolation
 }

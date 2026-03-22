@@ -184,9 +184,9 @@ public static class ScenarioPlanner
             Table = table,
             Columns = [],
             SourceOperation = chk,
-            Skipped = !present,
+            Skipped = true,
             SkipReason = present
-                ? "Automatic row generation from arbitrary CHECK SQL is not supported; add a custom integration test or plugin."
+                ? "Automatic row generation from arbitrary CHECK SQL is not supported; add a custom integration test."
                 : "Table does not exist at N-1."
         };
     }

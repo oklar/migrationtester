@@ -2,12 +2,12 @@ using System.Reflection;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
-namespace MigrationRepair.Capture;
+namespace MigrationRepair.Runner;
 
 /// <summary>
 /// Extracts <see cref="MigrationOperation"/> instances produced by a migration's <c>Up</c> method.
 /// </summary>
-public static class MigrationOperationCapture
+internal static class MigrationOperationCapture
 {
     private static readonly Action<Migration, MigrationBuilder> InvokeUp = CreateUpInvoker();
 

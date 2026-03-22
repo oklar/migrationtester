@@ -2,7 +2,7 @@ using MigrationRepair.Schema;
 
 namespace MigrationRepair.Seeding;
 
-public static class TableInsertOrder
+internal static class TableInsertOrder
 {
     /// <summary>
     /// Principal tables before dependents (FK direction).

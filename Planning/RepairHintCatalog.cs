@@ -16,6 +16,7 @@ public static class RepairHintCatalog
             AdversaryScenarioKind.NonNullableColumnWithNull => NonNullable(scenario),
             AdversaryScenarioKind.MaxLengthExceededAfterShrink => MaxLength(scenario),
             AdversaryScenarioKind.CheckConstraintViolation => Check(scenario),
+            AdversaryScenarioKind.NotNullColumnAddedWithoutDefault => NotNullAddColumn(scenario),
             _ => "Review migration and pre-migration data."
         };
     }
@@ -73,6 +74,19 @@ public static class RepairHintCatalog
             -- CHECK constraint: update or delete rows that fail the new predicate.
             -- Inspect the constraint SQL in the migration, then run a targeted UPDATE/DELETE
             -- (often with a SELECT ... WHERE NOT (<predicate>) dry-run first).
+            """;
+    }
+
+    private static string NotNullAddColumn(AdversaryScenario s)
+    {
+        string col = SqlDialect.Q(s.Columns[0]);
+        string table = SqlDialect.Q(s.Table);
+        return $"""
+            -- Column {col} is added as NOT NULL without a default value.
+            -- Existing rows cannot satisfy the constraint. Either:
+            -- 1) Add a DEFAULT in the migration: .HasDefaultValue(...) / .HasDefaultValueSql(...)
+            -- 2) Split into two steps: add as nullable, UPDATE with a value, then ALTER to NOT NULL.
+            ALTER TABLE {table} ADD {col} <type> NOT NULL CONSTRAINT [DF_{s.Table}_{s.Columns[0]}] DEFAULT <value>;
             """;
     }
 }

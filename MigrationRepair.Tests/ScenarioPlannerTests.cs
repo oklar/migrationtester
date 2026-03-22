@@ -199,4 +199,70 @@ public sealed class ScenarioPlannerTests
 
         Assert.Empty(scenarios);
     }
+
+    [Fact]
+    public void Plan_add_not_null_column_without_default_produces_scenario()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new AddColumnOperation
+            {
+                Name = "Status",
+                Table = "Items",
+                ClrType = typeof(int),
+                IsNullable = false,
+                DefaultValue = null,
+                DefaultValueSql = null
+            }
+        ];
+
+        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
+        var scenarios = ScenarioPlanner.Plan(ops, tables);
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(AdversaryScenarioKind.NotNullColumnAddedWithoutDefault, s.Kind);
+        Assert.False(s.Skipped);
+        Assert.Equal("Status", Assert.Single(s.Columns));
+    }
+
+    [Fact]
+    public void Plan_add_not_null_column_with_default_is_ignored()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new AddColumnOperation
+            {
+                Name = "Status",
+                Table = "Items",
+                ClrType = typeof(int),
+                IsNullable = false,
+                DefaultValue = 0
+            }
+        ];
+
+        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
+        var scenarios = ScenarioPlanner.Plan(ops, tables);
+
+        Assert.Empty(scenarios);
+    }
+
+    [Fact]
+    public void Plan_add_nullable_column_is_ignored()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new AddColumnOperation
+            {
+                Name = "Notes",
+                Table = "Items",
+                ClrType = typeof(string),
+                IsNullable = true
+            }
+        ];
+
+        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
+        var scenarios = ScenarioPlanner.Plan(ops, tables);
+
+        Assert.Empty(scenarios);
+    }
 }

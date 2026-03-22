@@ -39,6 +39,13 @@ public static class ScenarioPlanner
                 case AddCheckConstraintOperation chk:
                     list.Add(CheckScenario(chk, set));
                     break;
+                case AddColumnOperation addCol:
+                    var addColScenario = AddColumnScenario(addCol, set);
+                    if (addColScenario is not null)
+                    {
+                        list.Add(addColScenario);
+                    }
+                    break;
             }
         }
 
@@ -188,6 +195,29 @@ public static class ScenarioPlanner
             SkipReason = present
                 ? "Automatic row generation from arbitrary CHECK SQL is not supported; add a custom integration test."
                 : "Table does not exist at N-1."
+        };
+    }
+
+    private static AdversaryScenario? AddColumnScenario(
+        AddColumnOperation addCol,
+        HashSet<string> tables)
+    {
+        if (addCol.IsNullable || addCol.DefaultValue is not null || addCol.DefaultValueSql is not null)
+        {
+            return null;
+        }
+
+        string table = addCol.Table;
+        bool present = tables.Contains(table);
+        return new AdversaryScenario
+        {
+            Kind = AdversaryScenarioKind.NotNullColumnAddedWithoutDefault,
+            Name = $"NOT NULL column '{addCol.Name}' added to '{table}' without a default value",
+            Table = table,
+            Columns = [addCol.Name],
+            SourceOperation = addCol,
+            Skipped = !present,
+            SkipReason = present ? null : "Table does not exist at N-1."
         };
     }
 }

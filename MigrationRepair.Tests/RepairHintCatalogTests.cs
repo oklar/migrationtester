@@ -93,4 +93,22 @@ public sealed class RepairHintCatalogTests
 
         Assert.Contains("CHECK", hint);
     }
+
+    [Fact]
+    public void ForScenario_not_null_add_column_includes_default_guidance()
+    {
+        var scenario = new AdversaryScenario
+        {
+            Kind = AdversaryScenarioKind.NotNullColumnAddedWithoutDefault,
+            Name = "test",
+            Table = "Items",
+            Columns = ["Status"]
+        };
+
+        string hint = RepairHintCatalog.ForScenario(scenario);
+
+        Assert.Contains("NOT NULL", hint);
+        Assert.Contains("[Status]", hint);
+        Assert.Contains("DEFAULT", hint);
+    }
 }

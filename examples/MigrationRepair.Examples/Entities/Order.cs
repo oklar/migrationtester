@@ -8,7 +8,7 @@ public sealed class Order
 
     public Customer Customer { get; set; } = null!;
 
-    public string? Status { get; set; }
+    public string Status { get; set; } = "";
 
     public ICollection<OrderLine> Lines { get; set; } = new List<OrderLine>();
 }

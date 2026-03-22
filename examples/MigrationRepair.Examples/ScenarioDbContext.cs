@@ -28,11 +28,12 @@ public sealed class ScenarioDbContext : DbContext
         {
             e.ToTable(
                 "Products",
-                t => t.HasCheckConstraint("CK_Products_Code_NonEmpty", "[Code] <> N''"));
+                t => t.HasCheckConstraint("CK_Products_PositivePrice", "[Price] > 0"));
             e.HasKey(x => x.Id);
-            e.Property(x => x.Code).IsRequired().HasMaxLength(64);
+            e.Property(x => x.Code).IsRequired().HasMaxLength(50);
             e.Property(x => x.Name).IsRequired().HasMaxLength(200);
             e.Property(x => x.Note);
+            e.Property(x => x.Price).HasPrecision(10, 2);
             e.HasIndex(x => x.Code).IsUnique();
         });
 
@@ -47,7 +48,7 @@ public sealed class ScenarioDbContext : DbContext
         {
             e.ToTable("Orders");
             e.HasKey(x => x.Id);
-            e.Property(x => x.Status).HasMaxLength(32);
+            e.Property(x => x.Status).IsRequired().HasMaxLength(32);
             e.HasOne(x => x.Customer)
                 .WithMany(x => x.Orders)
                 .HasForeignKey(x => x.CustomerId)
@@ -59,6 +60,7 @@ public sealed class ScenarioDbContext : DbContext
             e.ToTable("Tags");
             e.HasKey(x => x.Id);
             e.Property(x => x.Label).IsRequired().HasMaxLength(128);
+            e.Property(x => x.ExternalId).HasColumnType("uniqueidentifier");
             e.HasOne(x => x.Product)
                 .WithMany(x => x.Tags)
                 .HasForeignKey(x => x.ProductId)

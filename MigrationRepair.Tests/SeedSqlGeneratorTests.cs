@@ -240,7 +240,7 @@ public sealed class SeedSqlGeneratorTests
         var stmt = Assert.Single(sql);
         Assert.Contains("UPDATE [Items]", stmt);
         Assert.Contains("[Price]", stmt);
-        Assert.Contains("99999999.99", stmt);
+        Assert.Contains("999999999.99", stmt);
     }
 
     [Theory]

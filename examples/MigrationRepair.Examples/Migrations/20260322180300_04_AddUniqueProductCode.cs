@@ -4,14 +4,21 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace MigrationRepair.Examples.Migrations
 {
-    /// <inheritdoc />
-    public partial class _09_AddUniqueProductCode : Migration
+    /// <summary>
+    /// Adds unique index on Products.Code.
+    /// Scenario: DuplicateUniqueIndexOrConstraint — existing Products rows may have
+    /// duplicate Code values.
+    /// </summary>
+    public partial class _04_AddUniqueProductCode : Migration
     {
-        /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            //migrationBuilder.Sql("DELETE FROM [Products] WHERE [Code] IN (SELECT [Code] FROM (SELECT [Code], COUNT(*) AS [Count] FROM [Products] GROUP BY [Code]) AS [DuplicateCodes] WHERE [Count] > 1)");
-
+            // FIX: uncomment to deduplicate before creating the unique index.
+            // migrationBuilder.Sql(
+            //     @"WITH cte AS (
+            //         SELECT [Id], ROW_NUMBER() OVER (PARTITION BY [Code] ORDER BY [Id]) AS rn
+            //         FROM [Products])
+            //     DELETE FROM cte WHERE rn > 1;");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Products_Code",
@@ -20,7 +27,6 @@ namespace MigrationRepair.Examples.Migrations
                 unique: true);
         }
 
-        /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropIndex(

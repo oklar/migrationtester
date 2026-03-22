@@ -10,6 +10,8 @@ public sealed class Product
 
     public string? Note { get; set; }
 
+    public decimal Price { get; set; }
+
     public ICollection<Tag> Tags { get; set; } = new List<Tag>();
 
     public ICollection<OrderLine> OrderLines { get; set; } = new List<OrderLine>();

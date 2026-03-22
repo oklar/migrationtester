@@ -9,4 +9,6 @@ public sealed class Tag
     public Product Product { get; set; } = null!;
 
     public string Label { get; set; } = "";
+
+    public Guid? ExternalId { get; set; }
 }

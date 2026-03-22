@@ -309,8 +309,8 @@ public static class SeedSqlGenerator
         int intDigits = newP - newScale;
 
         string overflow = intDigits > 0
-            ? new string('9', intDigits) + (newScale > 0 ? "." + new string('9', newScale) : "")
-            : "1";
+            ? new string('9', intDigits + 1) + (newScale > 0 ? "." + new string('9', newScale) : "")
+            : "1" + new string('0', newScale + 1);
 
         string tableQ = SqlDialect.Q(s.Table);
         string colQ = SqlDialect.Q(s.Columns[0]);

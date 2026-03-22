@@ -337,4 +337,68 @@ public sealed class SeedSqlGeneratorTests
         var stmt = Assert.Single(sql);
         Assert.Contains(expectedFragment, stmt);
     }
+
+    [Fact]
+    public void AdversarialStatements_duplicate_unique_with_guid_pk_uses_typed_pk_values()
+    {
+        var schema = SingleTableSchema("Items",
+            Col("Items", "Id", "uniqueidentifier", ordinal: 0, pk: true),
+            Col("Items", "Code", "nvarchar", ordinal: 1));
+
+        var scenario = new AdversaryScenario
+        {
+            Kind = AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint,
+            Name = "test",
+            Table = "Items",
+            Columns = ["Code"]
+        };
+
+        var sql = SeedSqlGenerator.AdversarialStatements(scenario, schema);
+
+        Assert.Equal(2, sql.Count);
+        Assert.Contains("00000000-0000-0000-0000-000000000001", sql[0]);
+        Assert.Contains("00000000-0000-0000-0000-000000000002", sql[1]);
+    }
+
+    [Fact]
+    public void AdversarialStatements_duplicate_unique_with_nvarchar_pk_uses_typed_pk_values()
+    {
+        var schema = SingleTableSchema("Items",
+            Col("Items", "Slug", "nvarchar", ordinal: 0, pk: true),
+            Col("Items", "Code", "int", ordinal: 1));
+
+        var scenario = new AdversaryScenario
+        {
+            Kind = AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint,
+            Name = "test",
+            Table = "Items",
+            Columns = ["Code"]
+        };
+
+        var sql = SeedSqlGenerator.AdversarialStatements(scenario, schema);
+
+        Assert.Equal(2, sql.Count);
+        Assert.Contains("s1", sql[0]);
+        Assert.Contains("s2", sql[1]);
+    }
+
+    [Fact]
+    public void AdversarialStatements_not_null_column_added_returns_empty()
+    {
+        var schema = SingleTableSchema("Items",
+            Col("Items", "Id", "int", ordinal: 0, pk: true, identity: true),
+            Col("Items", "Name", "nvarchar", ordinal: 1));
+
+        var scenario = new AdversaryScenario
+        {
+            Kind = AdversaryScenarioKind.NotNullColumnAddedWithoutDefault,
+            Name = "test",
+            Table = "Items",
+            Columns = ["Status"]
+        };
+
+        var sql = SeedSqlGenerator.AdversarialStatements(scenario, schema);
+
+        Assert.Empty(sql);
+    }
 }

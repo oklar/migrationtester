@@ -49,6 +49,7 @@ public static class SeedSqlGenerator
             AdversaryScenarioKind.MaxLengthExceededAfterShrink => LongValue(scenario, schema, cols),
             AdversaryScenarioKind.ColumnTypeConversionIncompatible => IncompatibleValue(scenario),
             AdversaryScenarioKind.DecimalPrecisionOverflow => OverflowValue(scenario),
+            AdversaryScenarioKind.NotNullColumnAddedWithoutDefault => [],
             _ => []
         };
     }
@@ -79,8 +80,8 @@ public static class SeedSqlGenerator
             }
             else if (c.IsPrimaryKey)
             {
-                vals1.Add("1");
-                vals2.Add("2");
+                vals1.Add(DefaultLiteral(c, seed: 1));
+                vals2.Add(DefaultLiteral(c, seed: 2));
             }
             else
             {

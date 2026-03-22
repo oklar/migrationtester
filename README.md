@@ -91,6 +91,13 @@ dotnet build MigrationRepair.slnx
 dotnet test MigrationRepair.Tests/MigrationRepair.Tests.csproj
 ```
 
+The **examples** project (`examples/MigrationRepair.Examples/`) consumes MigrationRepair as a NuGet package. To build it locally, pack the library first:
+
+```bash
+dotnet pack MigrationRepair.csproj -c Release
+dotnet build examples/MigrationRepair.Examples/MigrationRepair.Examples.csproj
+```
+
 Defaults: **`TestSqlServerConfig`** (`MIGRATION_REPAIR_SQL_TEST`, **`MIGRATION_REPAIR_SQL_DESIGN`** for `dotnet ef`).
 
 ## Limitations

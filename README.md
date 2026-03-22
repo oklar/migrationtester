@@ -7,7 +7,7 @@ NuGet library for **migration safety** on **Microsoft SQL Server**: in integrati
 ## Why use this package?
 
 - **Greenfield or long histories:** Whether you have two migrations or fifty, you can **loop the full chain** (or a subset) and see which steps break on realistic dirty data.
-- **Deterministic scenarios:** **unique indexes**, **foreign keys**, **nullable → required**, **max-length shrink**, and **check** guidance (check rows are not auto-generated).
+- **Deterministic scenarios:** **unique indexes / primary keys**, **foreign keys**, **nullable → required**, **max-length shrink**, **NOT NULL column without default**, **column type conversion**, **decimal precision overflow**, and **check constraint** guidance (check rows are not auto-generated).
 - **Honest limits:** Operations come from **`MigrationBuilder` fluency only**—`migrationBuilder.Sql(...)` is **flagged**, not parsed (false negatives possible). Introspection targets **`dbo`** user tables.
 
 ## Prerequisites

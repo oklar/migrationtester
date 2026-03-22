@@ -265,4 +265,137 @@ public sealed class ScenarioPlannerTests
 
         Assert.Empty(scenarios);
     }
+
+    [Fact]
+    public void Plan_alter_column_type_change_produces_type_conversion_scenario()
+    {
+        var alter = new AlterColumnOperation
+        {
+            Name = "Code",
+            Table = "Items",
+            ColumnType = "int"
+        };
+        alter.OldColumn.ColumnType = "nvarchar(100)";
+
+        var ops = (IReadOnlyList<MigrationOperation>)[alter];
+        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
+        var scenarios = ScenarioPlanner.Plan(ops, tables);
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(AdversaryScenarioKind.ColumnTypeConversionIncompatible, s.Kind);
+        Assert.False(s.Skipped);
+        Assert.Equal("nvarchar(100)", s.OldColumnType);
+        Assert.Equal("int", s.NewColumnType);
+    }
+
+    [Fact]
+    public void Plan_alter_column_same_type_does_not_produce_type_conversion()
+    {
+        var alter = new AlterColumnOperation
+        {
+            Name = "Code",
+            Table = "Items",
+            ColumnType = "nvarchar(200)",
+            IsNullable = false
+        };
+        alter.OldColumn.ColumnType = "nvarchar(100)";
+        alter.OldColumn.IsNullable = true;
+
+        var ops = (IReadOnlyList<MigrationOperation>)[alter];
+        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
+        var scenarios = ScenarioPlanner.Plan(ops, tables);
+
+        Assert.DoesNotContain(scenarios, s => s.Kind == AdversaryScenarioKind.ColumnTypeConversionIncompatible);
+    }
+
+    [Fact]
+    public void Plan_alter_column_precision_shrink_produces_overflow_scenario()
+    {
+        var alter = new AlterColumnOperation
+        {
+            Name = "Price",
+            Table = "Items",
+            ColumnType = "decimal",
+            Precision = 10,
+            Scale = 2
+        };
+        alter.OldColumn.ColumnType = "decimal";
+        alter.OldColumn.Precision = 18;
+        alter.OldColumn.Scale = 6;
+
+        var ops = (IReadOnlyList<MigrationOperation>)[alter];
+        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
+        var scenarios = ScenarioPlanner.Plan(ops, tables);
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(AdversaryScenarioKind.DecimalPrecisionOverflow, s.Kind);
+        Assert.Equal(18, s.OldPrecision);
+        Assert.Equal(10, s.NewPrecision);
+        Assert.Equal(6, s.OldScale);
+        Assert.Equal(2, s.NewScale);
+    }
+
+    [Fact]
+    public void Plan_alter_column_precision_grow_does_not_produce_overflow()
+    {
+        var alter = new AlterColumnOperation
+        {
+            Name = "Price",
+            Table = "Items",
+            ColumnType = "decimal",
+            Precision = 18,
+            Scale = 6
+        };
+        alter.OldColumn.ColumnType = "decimal";
+        alter.OldColumn.Precision = 10;
+        alter.OldColumn.Scale = 2;
+
+        var ops = (IReadOnlyList<MigrationOperation>)[alter];
+        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
+        var scenarios = ScenarioPlanner.Plan(ops, tables);
+
+        Assert.Empty(scenarios);
+    }
+
+    [Fact]
+    public void Plan_add_primary_key_produces_duplicate_scenario()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new AddPrimaryKeyOperation
+            {
+                Name = "PK_Items",
+                Table = "Items",
+                Columns = ["Code"]
+            }
+        ];
+
+        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
+        var scenarios = ScenarioPlanner.Plan(ops, tables);
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint, s.Kind);
+        Assert.False(s.Skipped);
+        Assert.Contains("primary key", s.Name, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Plan_add_primary_key_skipped_when_table_missing()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new AddPrimaryKeyOperation
+            {
+                Name = "PK_Items",
+                Table = "Items",
+                Columns = ["Code"]
+            }
+        ];
+
+        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var scenarios = ScenarioPlanner.Plan(ops, tables);
+
+        var s = Assert.Single(scenarios);
+        Assert.True(s.Skipped);
+    }
 }

@@ -17,6 +17,8 @@ public static class RepairHintCatalog
             AdversaryScenarioKind.MaxLengthExceededAfterShrink => MaxLength(scenario),
             AdversaryScenarioKind.CheckConstraintViolation => Check(scenario),
             AdversaryScenarioKind.NotNullColumnAddedWithoutDefault => NotNullAddColumn(scenario),
+            AdversaryScenarioKind.ColumnTypeConversionIncompatible => TypeConversion(scenario),
+            AdversaryScenarioKind.DecimalPrecisionOverflow => PrecisionOverflow(scenario),
             _ => "Review migration and pre-migration data."
         };
     }
@@ -87,6 +89,34 @@ public static class RepairHintCatalog
             -- 1) Add a DEFAULT in the migration: .HasDefaultValue(...) / .HasDefaultValueSql(...)
             -- 2) Split into two steps: add as nullable, UPDATE with a value, then ALTER to NOT NULL.
             ALTER TABLE {table} ADD {col} <type> NOT NULL CONSTRAINT [DF_{s.Table}_{s.Columns[0]}] DEFAULT <value>;
+            """;
+    }
+
+    private static string TypeConversion(AdversaryScenario s)
+    {
+        string col = SqlDialect.Q(s.Columns[0]);
+        string table = SqlDialect.Q(s.Table);
+        string oldT = s.OldColumnType ?? "?";
+        string newT = s.NewColumnType ?? "?";
+        return $"""
+            -- Column {col} changes from {oldT} to {newT}.
+            -- Existing data may not be convertible. Before altering:
+            -- 1) Find unconvertible rows: SELECT * FROM {table} WHERE TRY_CAST({col} AS {newT}) IS NULL AND {col} IS NOT NULL;
+            -- 2) Fix or remove them: UPDATE {table} SET {col} = <safe_value> WHERE TRY_CAST({col} AS {newT}) IS NULL;
+            """;
+    }
+
+    private static string PrecisionOverflow(AdversaryScenario s)
+    {
+        string col = SqlDialect.Q(s.Columns[0]);
+        string table = SqlDialect.Q(s.Table);
+        int newP = s.NewPrecision ?? 0;
+        int newS = s.NewScale ?? 0;
+        int intDigits = newP - newS;
+        return $"""
+            -- Column {col} precision shrinks to ({newP},{newS}): max {intDigits} integer digits and {newS} decimals.
+            -- Find overflow rows: SELECT * FROM {table} WHERE {col} >= POWER(10, {intDigits}) OR {col} <= -POWER(10, {intDigits});
+            -- Round excess decimals: UPDATE {table} SET {col} = ROUND({col}, {newS}) WHERE {col} IS NOT NULL;
             """;
     }
 }

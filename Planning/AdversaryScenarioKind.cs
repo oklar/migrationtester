@@ -7,5 +7,7 @@ public enum AdversaryScenarioKind
     NonNullableColumnWithNull,
     MaxLengthExceededAfterShrink,
     CheckConstraintViolation,
-    NotNullColumnAddedWithoutDefault
+    NotNullColumnAddedWithoutDefault,
+    ColumnTypeConversionIncompatible,
+    DecimalPrecisionOverflow
 }

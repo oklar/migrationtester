@@ -192,4 +192,68 @@ public sealed class SeedSqlGeneratorTests
         var stmt = Assert.Single(sql);
         Assert.Contains(expectedFragment, stmt);
     }
+
+    [Fact]
+    public void AdversarialStatements_type_conversion_generates_update_with_poison()
+    {
+        var schema = SingleTableSchema("Items",
+            Col("Items", "Id", "int", ordinal: 0, pk: true, identity: true),
+            Col("Items", "Code", "nvarchar", ordinal: 1));
+
+        var scenario = new AdversaryScenario
+        {
+            Kind = AdversaryScenarioKind.ColumnTypeConversionIncompatible,
+            Name = "test",
+            Table = "Items",
+            Columns = ["Code"],
+            OldColumnType = "nvarchar(100)",
+            NewColumnType = "int"
+        };
+
+        var sql = SeedSqlGenerator.AdversarialStatements(scenario, schema);
+
+        var stmt = Assert.Single(sql);
+        Assert.Contains("UPDATE [Items]", stmt);
+        Assert.Contains("[Code]", stmt);
+        Assert.Contains("not_a_number", stmt, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void AdversarialStatements_precision_overflow_generates_update_with_large_value()
+    {
+        var schema = SingleTableSchema("Items",
+            Col("Items", "Id", "int", ordinal: 0, pk: true, identity: true),
+            Col("Items", "Price", "decimal", ordinal: 1));
+
+        var scenario = new AdversaryScenario
+        {
+            Kind = AdversaryScenarioKind.DecimalPrecisionOverflow,
+            Name = "test",
+            Table = "Items",
+            Columns = ["Price"],
+            NewPrecision = 10,
+            NewScale = 2
+        };
+
+        var sql = SeedSqlGenerator.AdversarialStatements(scenario, schema);
+
+        var stmt = Assert.Single(sql);
+        Assert.Contains("UPDATE [Items]", stmt);
+        Assert.Contains("[Price]", stmt);
+        Assert.Contains("99999999.99", stmt);
+    }
+
+    [Theory]
+    [InlineData("nvarchar(100)", "int", "__not_a_number__")]
+    [InlineData("nvarchar(50)", "uniqueidentifier", "__not_a_guid__")]
+    [InlineData("varchar(100)", "datetime", "__not_a_date__")]
+    [InlineData("float", "int", "1.5")]
+    [InlineData("nvarchar(10)", "bit", "maybe")]
+    public void PoisonLiteral_returns_appropriate_value_for_type_transition(
+        string oldType, string newType, string expectedFragment)
+    {
+        string result = SeedSqlGenerator.PoisonLiteral(oldType, newType);
+
+        Assert.Contains(expectedFragment, result, StringComparison.OrdinalIgnoreCase);
+    }
 }

@@ -47,6 +47,8 @@ public static class SeedSqlGenerator
             AdversaryScenarioKind.ForeignKeyOrphan => OrphanRow(scenario, schema, cols),
             AdversaryScenarioKind.NonNullableColumnWithNull => NullOutColumn(scenario, schema, cols),
             AdversaryScenarioKind.MaxLengthExceededAfterShrink => LongValue(scenario, schema, cols),
+            AdversaryScenarioKind.ColumnTypeConversionIncompatible => IncompatibleValue(scenario),
+            AdversaryScenarioKind.DecimalPrecisionOverflow => OverflowValue(scenario),
             _ => []
         };
     }
@@ -244,6 +246,92 @@ public static class SeedSqlGenerator
         string colQ = SqlDialect.Q(s.Columns[0]);
         return [$"UPDATE {tableQ} SET {colQ} = {SqlString(payload)};"];
     }
+
+    private static IReadOnlyList<string> IncompatibleValue(AdversaryScenario s)
+    {
+        if (s.Columns is not { Count: > 0 } || s.NewColumnType is null)
+        {
+            return [];
+        }
+
+        string tableQ = SqlDialect.Q(s.Table);
+        string colQ = SqlDialect.Q(s.Columns[0]);
+        string poison = PoisonLiteral(s.OldColumnType, s.NewColumnType);
+        return [$"UPDATE {tableQ} SET {colQ} = {poison};"];
+    }
+
+    internal static string PoisonLiteral(string? oldType, string newType)
+    {
+        string nt = NormalizeTypeName(newType);
+        string ot = NormalizeTypeName(oldType ?? "");
+
+        if (nt is "INT" or "BIGINT" or "SMALLINT" or "TINYINT")
+        {
+            if (IsStringType(ot))
+            {
+                return SqlString("__not_a_number__");
+            }
+
+            return ot is "FLOAT" or "REAL" ? "1.5" : SqlString("__bad__");
+        }
+
+        if (nt is "DECIMAL" or "NUMERIC" or "MONEY" or "SMALLMONEY")
+        {
+            return IsStringType(ot) ? SqlString("__not_numeric__") : SqlString("__bad__");
+        }
+
+        if (nt == "UNIQUEIDENTIFIER")
+        {
+            return SqlString("__not_a_guid__");
+        }
+
+        if (nt is "DATE" or "DATETIME" or "DATETIME2" or "SMALLDATETIME" or "DATETIMEOFFSET" or "TIME")
+        {
+            return SqlString("__not_a_date__");
+        }
+
+        if (nt == "BIT")
+        {
+            return IsStringType(ot) ? SqlString("maybe") : SqlString("__bad__");
+        }
+
+        return SqlString("__unconvertible__");
+    }
+
+    private static IReadOnlyList<string> OverflowValue(AdversaryScenario s)
+    {
+        if (s.Columns is not { Count: > 0 } || s.NewPrecision is not int newP)
+        {
+            return [];
+        }
+
+        int newScale = s.NewScale ?? 0;
+        int intDigits = newP - newScale;
+
+        string overflow = intDigits > 0
+            ? new string('9', intDigits) + (newScale > 0 ? "." + new string('9', newScale) : "")
+            : "1";
+
+        string tableQ = SqlDialect.Q(s.Table);
+        string colQ = SqlDialect.Q(s.Columns[0]);
+        return [$"UPDATE {tableQ} SET {colQ} = {overflow};"];
+    }
+
+    private static string NormalizeTypeName(string sqlType)
+    {
+        string t = sqlType.Trim();
+        int paren = t.IndexOf('(');
+        if (paren > 0)
+        {
+            t = t[..paren].Trim();
+        }
+
+        return t.ToUpperInvariant();
+    }
+
+    private static bool IsStringType(string normalized)
+        => normalized is "NVARCHAR" or "VARCHAR" or "NCHAR" or "CHAR"
+            or "TEXT" or "NTEXT" or "XML";
 
     private static string? TryBuildInsertOneRow(
         string table,

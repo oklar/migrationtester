@@ -46,6 +46,9 @@ public static class ScenarioPlanner
                         list.Add(addColScenario);
                     }
                     break;
+                case AddPrimaryKeyOperation pk:
+                    list.Add(PrimaryKeyScenario(pk, set));
+                    break;
             }
         }
 
@@ -176,6 +179,48 @@ public static class ScenarioPlanner
                 SkipReason = present ? null : "Table does not exist at N-1."
             };
         }
+
+        string? oldType = oldCol?.ColumnType;
+        string? newType = alter.ColumnType;
+        if (oldType is not null && newType is not null
+            && !string.Equals(oldType, newType, StringComparison.OrdinalIgnoreCase)
+            && IsIncompatibleTypeChange(oldType, newType))
+        {
+            yield return new AdversaryScenario
+            {
+                Kind = AdversaryScenarioKind.ColumnTypeConversionIncompatible,
+                Name = $"Existing data in '{alter.Name}' may not convert from {oldType} to {newType}",
+                Table = table,
+                Columns = [alter.Name],
+                OldColumnType = oldType,
+                NewColumnType = newType,
+                SourceOperation = alter,
+                Skipped = !present,
+                SkipReason = present ? null : "Table does not exist at N-1."
+            };
+        }
+
+        int? oldPrecision = oldCol?.Precision;
+        int? newPrecision = alter.Precision;
+        int? oldScale = oldCol?.Scale;
+        int? newScale = alter.Scale;
+        if (newPrecision is > 0 && oldPrecision is > 0 && newPrecision < oldPrecision)
+        {
+            yield return new AdversaryScenario
+            {
+                Kind = AdversaryScenarioKind.DecimalPrecisionOverflow,
+                Name = $"Value overflow when precision shrinks for '{alter.Name}'",
+                Table = table,
+                Columns = [alter.Name],
+                OldPrecision = oldPrecision,
+                NewPrecision = newPrecision,
+                OldScale = oldScale,
+                NewScale = newScale,
+                SourceOperation = alter,
+                Skipped = !present,
+                SkipReason = present ? null : "Table does not exist at N-1."
+            };
+        }
     }
 
     private static AdversaryScenario CheckScenario(
@@ -218,6 +263,86 @@ public static class ScenarioPlanner
             SourceOperation = addCol,
             Skipped = !present,
             SkipReason = present ? null : "Table does not exist at N-1."
+        };
+    }
+
+    private static AdversaryScenario PrimaryKeyScenario(
+        AddPrimaryKeyOperation pk,
+        HashSet<string> tables)
+    {
+        string table = pk.Table;
+        bool present = tables.Contains(table);
+        var columns = pk.Columns?.ToList() ?? [];
+        bool noColumns = columns.Count == 0;
+        return new AdversaryScenario
+        {
+            Kind = AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint,
+            Name = $"Duplicate values for new primary key '{pk.Name}' on '{table}'",
+            Table = table,
+            Columns = columns,
+            SourceOperation = pk,
+            Skipped = !present || noColumns,
+            SkipReason = !present
+                ? "Table does not exist at migration N-1."
+                : noColumns
+                    ? "Primary key has no column list; cannot build duplicate seed."
+                    : null
+        };
+    }
+
+    private static bool IsIncompatibleTypeChange(string oldType, string newType)
+    {
+        var oldCat = CategorizeType(oldType);
+        var newCat = CategorizeType(newType);
+
+        if (oldCat == TypeCategory.Unknown || newCat == TypeCategory.Unknown)
+        {
+            return false;
+        }
+
+        if (oldCat == newCat)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private enum TypeCategory
+    {
+        Unknown,
+        String,
+        Integer,
+        Decimal,
+        Float,
+        Guid,
+        DateTime,
+        Binary,
+        Bit
+    }
+
+    private static TypeCategory CategorizeType(string sqlType)
+    {
+        string t = sqlType.Trim();
+        int paren = t.IndexOf('(');
+        if (paren > 0)
+        {
+            t = t[..paren].Trim();
+        }
+
+        return t.ToUpperInvariant() switch
+        {
+            "NVARCHAR" or "VARCHAR" or "NCHAR" or "CHAR"
+                or "TEXT" or "NTEXT" or "XML" => TypeCategory.String,
+            "TINYINT" or "SMALLINT" or "INT" or "BIGINT" => TypeCategory.Integer,
+            "DECIMAL" or "NUMERIC" or "MONEY" or "SMALLMONEY" => TypeCategory.Decimal,
+            "REAL" or "FLOAT" => TypeCategory.Float,
+            "UNIQUEIDENTIFIER" => TypeCategory.Guid,
+            "DATE" or "DATETIME" or "DATETIME2" or "SMALLDATETIME"
+                or "DATETIMEOFFSET" or "TIME" => TypeCategory.DateTime,
+            "BINARY" or "VARBINARY" or "IMAGE" => TypeCategory.Binary,
+            "BIT" => TypeCategory.Bit,
+            _ => TypeCategory.Unknown
         };
     }
 }

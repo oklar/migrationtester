@@ -111,4 +111,45 @@ public sealed class RepairHintCatalogTests
         Assert.Contains("[Status]", hint);
         Assert.Contains("DEFAULT", hint);
     }
+
+    [Fact]
+    public void ForScenario_type_conversion_includes_try_cast()
+    {
+        var scenario = new AdversaryScenario
+        {
+            Kind = AdversaryScenarioKind.ColumnTypeConversionIncompatible,
+            Name = "test",
+            Table = "Items",
+            Columns = ["Code"],
+            OldColumnType = "nvarchar(100)",
+            NewColumnType = "int"
+        };
+
+        string hint = RepairHintCatalog.ForScenario(scenario);
+
+        Assert.Contains("TRY_CAST", hint);
+        Assert.Contains("nvarchar(100)", hint);
+        Assert.Contains("int", hint);
+        Assert.Contains("[Code]", hint);
+    }
+
+    [Fact]
+    public void ForScenario_precision_overflow_includes_power_and_round()
+    {
+        var scenario = new AdversaryScenario
+        {
+            Kind = AdversaryScenarioKind.DecimalPrecisionOverflow,
+            Name = "test",
+            Table = "Items",
+            Columns = ["Price"],
+            NewPrecision = 10,
+            NewScale = 2
+        };
+
+        string hint = RepairHintCatalog.ForScenario(scenario);
+
+        Assert.Contains("POWER", hint);
+        Assert.Contains("ROUND", hint);
+        Assert.Contains("[Price]", hint);
+    }
 }

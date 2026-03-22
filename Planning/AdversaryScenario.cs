@@ -29,6 +29,24 @@ public sealed class AdversaryScenario
     /// <summary>For length reduction: new max length after migration.</summary>
     public int? NewMaxLength { get; init; }
 
+    /// <summary>For type conversion: SQL type before the ALTER.</summary>
+    public string? OldColumnType { get; init; }
+
+    /// <summary>For type conversion: SQL type after the ALTER.</summary>
+    public string? NewColumnType { get; init; }
+
+    /// <summary>For precision reduction: old precision.</summary>
+    public int? OldPrecision { get; init; }
+
+    /// <summary>For precision reduction: new precision.</summary>
+    public int? NewPrecision { get; init; }
+
+    /// <summary>For precision reduction: old scale.</summary>
+    public int? OldScale { get; init; }
+
+    /// <summary>For precision reduction: new scale.</summary>
+    public int? NewScale { get; init; }
+
     /// <summary>Original migration operation (for debugging).</summary>
     public MigrationOperation? SourceOperation { get; init; }
 

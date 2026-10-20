@@ -76,8 +76,9 @@ public sealed class AdversaryFailureDemoTests
 
     /// <summary>
     /// Demonstrates running a single hostile migration and inspecting the failure output.
+    /// Fails on purpose, so it only runs when requested: <c>dotnet test -- xUnit.Explicit=only</c>.
     /// </summary>
-    [Fact]
+    [Fact(Explicit = true)]
     public async Task RunAsync_single_migration_shows_failure_summary_and_hints()
     {
         var result = await MigrationAdversaryRunner.RunAsync(

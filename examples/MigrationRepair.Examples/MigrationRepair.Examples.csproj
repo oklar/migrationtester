@@ -1,27 +1,41 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <OutputType>Exe</OutputType>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <IsPackable>false</IsPackable>
     <RootNamespace>MigrationRepair.Examples</RootNamespace>
-    <!-- Pack library from repo root: dotnet pack ../../MigrationRepair.csproj -c Release -->
-    <RestoreAdditionalProjectSources>$(MSBuildThisFileDirectory)..\..\bin\Release</RestoreAdditionalProjectSources>
   </PropertyGroup>
 
+  <!--
+    Builds against the library source by default. To consume the packed nupkg instead:
+      dotnet pack src/MigrationRepair -c Release
+      dotnet build examples/MigrationRepair.Examples -p:UseMigrationRepairPackage=true
+    Package mode restores into its own folder so a locally packed version never lands in
+    (or is served from) the global NuGet cache.
+  -->
+  <PropertyGroup Condition="'$(UseMigrationRepairPackage)' == 'true'">
+    <RestoreAdditionalProjectSources>$(MSBuildThisFileDirectory)..\..\artifacts\packages</RestoreAdditionalProjectSources>
+    <RestorePackagesPath>$(MSBuildThisFileDirectory)..\..\artifacts\examples-packages</RestorePackagesPath>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(UseMigrationRepairPackage)' == 'true'">
+    <PackageReference Include="MigrationRepair" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseMigrationRepairPackage)' != 'true'">
+    <ProjectReference Include="..\..\src\MigrationRepair\MigrationRepair.csproj" />
+  </ItemGroup>
+
   <ItemGroup>
-    <PackageReference Include="MigrationRepair" Version="0.1.0" />
-    <PackageReference Include="coverlet.collector" Version="6.0.4" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0">
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.0" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
-    <PackageReference Include="xunit.v3" Version="3.2.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>

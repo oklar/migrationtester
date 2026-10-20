@@ -82,23 +82,38 @@ Use **Windows auth** on dev (`Integrated Security=True`) when you prefer SSMS-st
 | `MigrationStepResult` | `MigrationId`, `Result`, `Duration` per step |
 | `AllStepsSucceeded` / `FirstFailedStep` | Test helpers |
 
-## Tests in this repo
+## Working on this repo
 
-The test project uses **xUnit.net v3** (`xunit.v3`, executable output). SQL integration tests are in collection **`SqlServer integration`**: at the **start** of each `dotnet test` run the **`MigrationRepair_Test`** database is **dropped** (so a previous SSMS session does not block a clean run); after tests finish the database **stays** as the last test left it until the **next** run.
+| Path | Contents |
+|------|----------|
+| `src/MigrationRepair/` | The library (the only packable project) |
+| `tests/MigrationRepair.Tests/` | Unit and SQL Server integration tests (xUnit.net v3) |
+| `examples/MigrationRepair.Examples/` | Consumer sample; see its [README](examples/MigrationRepair.Examples/README.md) |
+
+Shared build settings live in `Directory.Build.props`, package versions in `Directory.Packages.props`. Warnings, including NuGet vulnerability warnings, fail the build.
 
 ```bash
 dotnet build MigrationRepair.slnx
-dotnet test MigrationRepair.Tests/MigrationRepair.Tests.csproj
+dotnet test MigrationRepair.slnx
 ```
 
-The **examples** project (`examples/MigrationRepair.Examples/`) consumes MigrationRepair as a NuGet package. To build it locally, pack the library first:
+Integration tests need SQL Server. The defaults in **`TestSqlServerConfig`** use Windows auth against the default local instance; override them with **`MIGRATION_REPAIR_SQL_TEST`** (tests) and **`MIGRATION_REPAIR_SQL_DESIGN`** (`dotnet ef`). For a SQL Express named instance, for example:
 
 ```bash
-dotnet pack MigrationRepair.csproj -c Release
-dotnet build examples/MigrationRepair.Examples/MigrationRepair.Examples.csproj
+export MIGRATION_REPAIR_SQL_TEST='Server=localhost\SQLEXPRESS;Database=MigrationRepair_Test;Integrated Security=True;TrustServerCertificate=True'
 ```
 
-Defaults: **`TestSqlServerConfig`** (`MIGRATION_REPAIR_SQL_TEST`, **`MIGRATION_REPAIR_SQL_DESIGN`** for `dotnet ef`).
+At the **start** of each run the **`MigrationRepair_Test`** database is **dropped**; afterwards it stays as the last test left it, for inspection in SSMS.
+
+**Known issues.** `tests/MigrationRepair.Tests/KnownIssues/` holds tests for schemas the adversary gets wrong today (rowversion columns, GUID keys, non-`dbo` schemas, and more). Each asserts the behavior we want, so they fail and are marked `Explicit`; the default run skips them. Run them with:
+
+```bash
+dotnet test tests/MigrationRepair.Tests -- xUnit.Explicit=only
+```
+
+The test project holds several `DbContext` types, so pass `--context TestDbContext` to `dotnet ef`.
+
+**CI** (`.github/workflows/ci.yml`) runs the tests against a SQL Server container, packs the library, and builds the examples against the packed nupkg.
 
 ## Limitations
 
@@ -108,10 +123,6 @@ Defaults: **`TestSqlServerConfig`** (`MIGRATION_REPAIR_SQL_TEST`, **`MIGRATION_R
 - **First migration**: no N−1 tables; uses an empty schema model until **`Migrate(N)`** creates the database.
 - **Custom `Up()` ordering** or data-fix steps can still yield **false negatives**.
 
-## Nested test project and example
-
-`MigrationRepair.Tests/` and **`examples/MigrationRepair.Examples/`** are excluded from the main library’s compile glob in `MigrationRepair.csproj`. The **MigrationRepair.Examples** project is a NuGet consumer sample (SQL Server, EF migrations, adversary demo tests); see **`examples/MigrationRepair.Examples/README.md`**. It does not affect published **NuGet** package size.
-
 ## Local tooling
 
-`dotnet-tools.json` pins **dotnet-ef** 10.0.0 for sample migrations.
+`dotnet-tools.json` pins **dotnet-ef** 10.0.13 for the test and sample migrations (`dotnet tool restore`).

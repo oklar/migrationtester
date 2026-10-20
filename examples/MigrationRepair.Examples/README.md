@@ -1,62 +1,64 @@
 # MigrationRepair.Examples
 
-Consumer sample under **`examples/MigrationRepair.Examples`** in the MigrationRepair repo. References the **MigrationRepair** NuGet package built from **`../../bin/Release`** (two levels up from this folder to the library project root).
+A consumer sample: an EF Core model with nine SQL Server migrations, and tests that run the adversary over them. It builds against the library source by default, so there is nothing to pack first.
 
 ## Prerequisites
 
-- .NET 10 SDK  
-- SQL Server (local, Docker, or remote) — same as the main library README  
-- Packed library (from the `MigrationRepair` directory that contains `MigrationRepair.csproj`):
-
-  ```bash
-  dotnet pack ../../MigrationRepair.csproj -c Release
-  ```
+- .NET 10 SDK
+- SQL Server (local, Docker, or remote) and a login that can create and drop databases
 
 ## Configuration
 
 | Env var | Purpose |
 |--------|---------|
-| `MIGRATION_REPAIR_SCENARIO_TEST` | Connection string for integration tests (DB is dropped at test collection start). |
-| `MIGRATION_REPAIR_SCENARIO_DESIGN` | Connection string for `dotnet ef` design-time. |
+| `MIGRATION_REPAIR_SCENARIO_TEST` | Connection string for the tests. The database is dropped when the test collection starts. |
+| `MIGRATION_REPAIR_SCENARIO_DESIGN` | Connection string for `dotnet ef` design time. |
 
-Defaults use **Windows auth** and databases `MigrationRepairExamples_Test` / `MigrationRepairExamples_Design`.
+Defaults use **Windows auth** on the default local instance, with databases `MigrationRepairExamples_Test` / `MigrationRepairExamples_Design`.
 
 ## Migrations
 
-There are **9** EF Core migrations (01–06 build the schema; **07** check constraint on `Products.Code`; **08** optional `Orders.Status`; **09** unique index **`IX_Products_Code`**). The adversary targets that last step. (A separate **column length shrink** migration was omitted so the full chain fails only on uniqueness—shrinks are also adversary-hostile.)
+| # | Migration | What the adversary plants |
+|---|-----------|---------------------------|
+| 01 | `InitialSchema` | Nothing; the first migration has no earlier data, so it passes |
+| 02 | `AddForeignKeyOrdersCustomers` | An `Orders` row whose `CustomerId` matches no customer |
+| 03 | `ShrinkProductCodeLength` | A `Products.Code` longer than the new max length |
+| 04 | `AddUniqueProductCode` | Two products with the same `Code` |
+| 05 | `MakeProductNameRequired` | A product with a NULL `Name` |
+| 06 | `AddOrderStatus` | Existing `Orders` rows, which a NOT NULL column without a default cannot fill |
+| 07 | `ChangeTagExternalIdToGuid` | A `Tags.ExternalId` that is not a GUID |
+| 08 | `ShrinkProductPricePrecision` | A `Products.Price` too large for `decimal(10,2)` |
+| 09 | `AddCheckConstraintPositivePrice` | Nothing; CHECK constraints are not seeded automatically, so it passes |
 
 ## Commands
 
-Working directory: this folder (`examples/MigrationRepair.Examples`).
-
-Restore (local `.nupkg` from `../../bin/Release`):
+From the repository root:
 
 ```bash
-dotnet restore
+dotnet test examples/MigrationRepair.Examples
 ```
 
-EF tools:
+`RunAllAsync_each_migration_triggers_its_adversarial_scenario` asserts that 02–08 fail and 01 and 09 pass, so it is green.
+
+`RunAsync_single_migration_shows_failure_summary_and_hints` fails on purpose so the test output shows the full failure summary and T-SQL repair hints. It is `Explicit`, so run it by asking for it:
 
 ```bash
-dotnet tool restore
+dotnet test examples/MigrationRepair.Examples --logger "console;verbosity=detailed" -- xUnit.Explicit=only
 ```
 
-Run tests (**they fail on purpose** — red status so the test message carries `FailureSummary` and SQL hints):
+EF tools (`dotnet tool restore` once, from the repository root):
 
 ```bash
-dotnet test --logger "console;verbosity=detailed"
+dotnet ef migrations list --project examples/MigrationRepair.Examples
 ```
 
-Filter:
+## Against the packed package
+
+To build the sample the way a NuGet consumer would:
 
 ```bash
-dotnet test --filter FullyQualifiedName~AdversaryFailureDemoTests
+dotnet pack src/MigrationRepair -c Release
+dotnet build examples/MigrationRepair.Examples -p:UseMigrationRepairPackage=true
 ```
 
-## Re-pack after library changes
-
-Pack **`MigrationRepair.csproj`** again and restore this project so tests use the new package.
-
-## NuGet package size
-
-Only `MigrationRepair.csproj` is packed; this example project is **not** included in the `.nupkg` unless you explicitly add packed files.
+Package mode restores from `artifacts/packages` into `artifacts/examples-packages` instead of the global NuGet cache, so a locally packed version never shadows a published one. After repacking the same version, delete `artifacts/examples-packages` to pick up the new build. CI runs this on every push.

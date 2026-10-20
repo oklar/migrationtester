@@ -1,0 +1,222 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
+
+namespace MigrationRepair.Tests.KnownIssues;
+
+// Hand-written two-step migration chains, one context per case so a seeding crash in one
+// case cannot mask another. No designer files or snapshots: the runner only needs Up().
+
+public sealed class RowVersionContext(DbContextOptions<RowVersionContext> options) : DbContext(options);
+
+[DbContext(typeof(RowVersionContext))]
+[Migration("20260101000001_CreateDocuments")]
+public sealed class CreateDocuments : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.CreateTable(
+            name: "Documents",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                Title = table.Column<string>("nvarchar(100)", maxLength: 100, nullable: false),
+                RowVersion = table.Column<byte[]>("rowversion", rowVersion: true, nullable: false)
+            },
+            constraints: table => table.PrimaryKey("PK_Documents", x => x.Id));
+}
+
+[DbContext(typeof(RowVersionContext))]
+[Migration("20260101000002_AddUniqueDocumentTitle")]
+public sealed class AddUniqueDocumentTitle : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.CreateIndex("IX_Documents_Title", "Documents", "Title", unique: true);
+}
+
+public sealed class GuidKeyContext(DbContextOptions<GuidKeyContext> options) : DbContext(options);
+
+[DbContext(typeof(GuidKeyContext))]
+[Migration("20260101000001_CreateAccounts")]
+public sealed class CreateAccounts : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.CreateTable(
+            name: "Accounts",
+            columns: table => new
+            {
+                Id = table.Column<Guid>("uniqueidentifier", nullable: false),
+                Email = table.Column<string>("nvarchar(200)", maxLength: 200, nullable: false)
+            },
+            constraints: table => table.PrimaryKey("PK_Accounts", x => x.Id));
+}
+
+[DbContext(typeof(GuidKeyContext))]
+[Migration("20260101000002_AddUniqueAccountEmail")]
+public sealed class AddUniqueAccountEmail : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.CreateIndex("IX_Accounts_Email", "Accounts", "Email", unique: true);
+}
+
+public sealed class ShrinkLengthContext(DbContextOptions<ShrinkLengthContext> options) : DbContext(options);
+
+[DbContext(typeof(ShrinkLengthContext))]
+[Migration("20260101000001_CreateProducts")]
+public sealed class CreateProducts : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.CreateTable(
+            name: "Products",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                Code = table.Column<string>("nvarchar(100)", maxLength: 100, nullable: false)
+            },
+            constraints: table => table.PrimaryKey("PK_Products", x => x.Id));
+}
+
+[DbContext(typeof(ShrinkLengthContext))]
+[Migration("20260101000002_ShrinkProductCode")]
+public sealed class ShrinkProductCode : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.AlterColumn<string>(
+            name: "Code",
+            table: "Products",
+            type: "nvarchar(60)",
+            maxLength: 60,
+            nullable: false,
+            oldClrType: typeof(string),
+            oldType: "nvarchar(100)",
+            oldMaxLength: 100);
+}
+
+public sealed class CustomSchemaContext(DbContextOptions<CustomSchemaContext> options) : DbContext(options);
+
+[DbContext(typeof(CustomSchemaContext))]
+[Migration("20260101000001_CreateAppItems")]
+public sealed class CreateAppItems : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.EnsureSchema("app");
+        migrationBuilder.CreateTable(
+            name: "Items",
+            schema: "app",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                Code = table.Column<string>("nvarchar(50)", maxLength: 50, nullable: false)
+            },
+            constraints: table => table.PrimaryKey("PK_Items", x => x.Id));
+    }
+}
+
+[DbContext(typeof(CustomSchemaContext))]
+[Migration("20260101000002_AddUniqueAppItemCode")]
+public sealed class AddUniqueAppItemCode : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.CreateIndex("IX_Items_Code", "Items", "Code", schema: "app", unique: true);
+}
+
+public sealed class RequiredForeignKeyContext(DbContextOptions<RequiredForeignKeyContext> options) : DbContext(options);
+
+[DbContext(typeof(RequiredForeignKeyContext))]
+[Migration("20260101000001_CreateCustomersAndOrders")]
+public sealed class CreateCustomersAndOrders : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.CreateTable(
+            name: "Customers",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                Name = table.Column<string>("nvarchar(100)", maxLength: 100, nullable: false)
+            },
+            constraints: table => table.PrimaryKey("PK_Customers", x => x.Id));
+
+        migrationBuilder.CreateTable(
+            name: "Orders",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                CustomerId = table.Column<int>("int", nullable: false),
+                Note = table.Column<string>("nvarchar(100)", maxLength: 100, nullable: true)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_Orders", x => x.Id);
+                table.ForeignKey("FK_Orders_Customers_CustomerId", x => x.CustomerId, "Customers", "Id");
+            });
+    }
+}
+
+[DbContext(typeof(RequiredForeignKeyContext))]
+[Migration("20260101000002_MakeOrderNoteRequired")]
+public sealed class MakeOrderNoteRequired : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.AlterColumn<string>(
+            name: "Note",
+            table: "Orders",
+            type: "nvarchar(100)",
+            maxLength: 100,
+            nullable: false,
+            oldClrType: typeof(string),
+            oldType: "nvarchar(100)",
+            oldMaxLength: 100,
+            oldNullable: true);
+}
+
+public sealed class NarrowingContext(DbContextOptions<NarrowingContext> options) : DbContext(options);
+
+[DbContext(typeof(NarrowingContext))]
+[Migration("20260101000001_CreateMeasurements")]
+public sealed class CreateMeasurements : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.CreateTable(
+            name: "Measurements",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                Quantity = table.Column<int>("int", nullable: false),
+                Amount = table.Column<decimal>("decimal(18,2)", precision: 18, scale: 2, nullable: false)
+            },
+            constraints: table => table.PrimaryKey("PK_Measurements", x => x.Id));
+}
+
+[DbContext(typeof(NarrowingContext))]
+[Migration("20260101000002_NarrowQuantityToSmallint")]
+public sealed class NarrowQuantityToSmallint : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.AlterColumn<short>(
+            name: "Quantity",
+            table: "Measurements",
+            type: "smallint",
+            nullable: false,
+            oldClrType: typeof(int),
+            oldType: "int");
+}
+
+[DbContext(typeof(NarrowingContext))]
+[Migration("20260101000003_IncreaseAmountScale")]
+public sealed class IncreaseAmountScale : Migration
+{
+    // Same precision, more decimals: integer digits drop from 16 to 14.
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.AlterColumn<decimal>(
+            name: "Amount",
+            table: "Measurements",
+            type: "decimal(18,4)",
+            precision: 18,
+            scale: 4,
+            nullable: false,
+            oldClrType: typeof(decimal),
+            oldType: "decimal(18,2)",
+            oldPrecision: 18,
+            oldScale: 2);
+}

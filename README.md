@@ -106,7 +106,7 @@ export MIGRATION_REPAIR_SQL_TEST='Server=localhost\SQLEXPRESS;Database=Migration
 
 At the **start** of each run the **`MigrationRepair_Test`** database is **dropped**; afterwards it stays as the last test left it, for inspection in SSMS.
 
-**Schema cases.** `tests/MigrationRepair.Tests/SchemaCases/` runs the adversary end to end over hand-written migrations for common schema shapes (rowversion columns, GUID keys, non-`dbo` schemas, required foreign keys, type narrowing, seed rows rejected by a CHECK constraint). When you find a schema the adversary gets wrong, add it there as a test of the behavior you want and mark it `Explicit` until it is fixed; the default run skips explicit tests. Run them with:
+**Schema cases.** `tests/MigrationRepair.Tests/SchemaCases/` runs the adversary end to end over hand-written migrations for common schema shapes (rowversion columns, GUID keys, non-`dbo` schemas, required foreign keys, filtered unique indexes, type narrowing, seed rows rejected by a CHECK constraint). When you find a schema the adversary gets wrong, add it there as a test of the behavior you want and mark it `Explicit` until it is fixed; the default run skips explicit tests. Run them with:
 
 ```bash
 dotnet test tests/MigrationRepair.Tests -- xUnit.Explicit=only
@@ -122,7 +122,7 @@ The test project holds several `DbContext` types, so pass `--context TestDbConte
 - **Not exhaustive “any data”**: deterministic scenarios only; not full property-based generation.
 - **SQL Server–only** implementation (provider alignment: test against the same engine as production migrations).
 - **First migration**: no N−1 tables; uses an empty schema model until **`Migrate(N)`** creates the database.
-- **Seeding**: one ordinary row per table, with bad values planted by single-row updates and row copies. When SQL Server rejects a seed statement (an existing CHECK constraint, a trigger, a column type with no generator, a required self-referencing foreign key), the affected scenarios are reported as skipped with **`Not seeded: <reason>`** and a warning is added; the run carries on. Filtered unique indexes and new CHECK constraints are not seeded.
+- **Seeding**: one ordinary row per table, with bad values planted by single-row updates and row copies. When SQL Server rejects a seed statement (an existing CHECK constraint, a trigger, a column type with no generator, a required self-referencing foreign key), the affected scenarios are reported as skipped with **`Not seeded: <reason>`** and a warning is added; the run carries on. Filtered unique indexes are seeded when the filter is only `IS NOT NULL` terms (what EF generates for nullable columns); other filters and new CHECK constraints are not seeded.
 - **Silent data loss** (e.g. `datetime2` → `date`, scale reduction, `nvarchar` → `varchar`) does not fail a migration, so it is not reported.
 - **Custom `Up()` ordering** or data-fix steps can still yield **false negatives**.
 

@@ -435,6 +435,59 @@ public sealed class ScenarioPlannerTests
     }
 
     [Fact]
+    public void Plan_is_not_null_filtered_unique_index_produces_scenario_with_filter_columns()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new CreateIndexOperation { Name = "IX_Users_Email", Table = "Users", Columns = ["Email"], IsUnique = true, Filter = "[Email] IS NOT NULL" }
+        ];
+
+        var scenarios = ScenarioPlanner.Plan(ops, TestSchema.WithTables("Users"));
+
+        var s = Assert.Single(scenarios);
+        Assert.False(s.Skipped, s.SkipReason);
+        Assert.Equal(["Email"], s.NotNullFilterColumns);
+    }
+
+    [Fact]
+    public void Plan_unique_index_with_other_filter_is_skipped()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new CreateIndexOperation { Name = "IX_Users_Email", Table = "Users", Columns = ["Email"], IsUnique = true, Filter = "[Deleted] = 0" }
+        ];
+
+        var scenarios = ScenarioPlanner.Plan(ops, TestSchema.WithTables("Users"));
+
+        var s = Assert.Single(scenarios);
+        Assert.True(s.Skipped);
+        Assert.Contains("[Deleted] = 0", s.SkipReason);
+    }
+
+    [Fact]
+    public void Plan_filtered_unique_index_skipped_when_same_filtered_key_exists()
+    {
+        // EF renames an index by dropping and recreating it; the old one already rules out duplicates.
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new DropIndexOperation { Name = "IX_Users_Email", Table = "Users" },
+            new CreateIndexOperation { Name = "IX_Users_EmailAddress", Table = "Users", Columns = ["Email"], IsUnique = true, Filter = "[Email] IS NOT NULL" }
+        ];
+
+        var schema = TestSchema.Of(new TableMetadata
+        {
+            Name = new TableName("dbo", "Users"),
+            Columns = [TestSchema.Col("Email", "nvarchar(200)", nullable: true)],
+            UniqueKeys = [new UniqueKeyMetadata { Name = "IX_Users_Email", Columns = ["Email"], Filter = "([Email] IS NOT NULL)" }]
+        });
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
+
+        var s = Assert.Single(scenarios);
+        Assert.True(s.Skipped);
+        Assert.Contains("IX_Users_Email", s.SkipReason);
+    }
+
+    [Fact]
     public void Plan_unique_index_skipped_when_existing_unique_key_already_covers_columns()
     {
         var ops = (IReadOnlyList<MigrationOperation>)

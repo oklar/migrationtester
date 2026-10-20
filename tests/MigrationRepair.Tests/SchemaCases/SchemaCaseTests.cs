@@ -71,6 +71,23 @@ public sealed class SchemaCaseTests
     }
 
     [Fact]
+    public async Task Filtered_unique_index_on_nullable_column_is_exercised()
+    {
+        var result = await RunAsync<FilteredUniqueContext>("20260101000002_AddUniqueUserEmail", o => new(o));
+
+        AssertBrokenByAdversary(result, AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint);
+    }
+
+    [Fact]
+    public async Task Filtered_unique_index_on_optional_foreign_key_is_exercised()
+    {
+        // N-1 already has the filtered unique index on Email, so the copies also need different emails.
+        var result = await RunAsync<FilteredUniqueContext>("20260101000003_AddUniqueUserProfile", o => new(o));
+
+        AssertBrokenByAdversary(result, AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint);
+    }
+
+    [Fact]
     public async Task Same_column_gets_each_bad_value_in_its_own_row()
     {
         // Name becomes NOT NULL and shorter in one AlterColumn: the NULL and the long value need separate rows.

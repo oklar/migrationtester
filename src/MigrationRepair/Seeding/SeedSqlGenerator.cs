@@ -95,11 +95,25 @@ internal static class SeedSqlGenerator
         IReadOnlyCollection<string> keep,
         IReadOnlyList<ColumnValue> overrides,
         int ordinal)
+        => CopyRows(table, keep, overrides, [ordinal]);
+
+    /// <summary>
+    /// Inserts one copy of the same source row per ordinal, as <see cref="CopyRow"/> does. With several
+    /// ordinals the copies share their <paramref name="keep"/> and <paramref name="overrides"/> values, so
+    /// they duplicate each other even if a different source row would have been picked.
+    /// </summary>
+    public static SeedSql CopyRows(
+        TableMetadata table,
+        IReadOnlyCollection<string> keep,
+        IReadOnlyList<ColumnValue> overrides,
+        IReadOnlyList<int> ordinals)
     {
         var keepSet = new HashSet<string>(keep, StringComparer.OrdinalIgnoreCase);
         var overrideMap = overrides.ToDictionary(static o => o.Column, static o => o.Value, StringComparer.OrdinalIgnoreCase);
         var fkColumns = new HashSet<string>(table.ForeignKeys.SelectMany(static f => f.Columns), StringComparer.OrdinalIgnoreCase);
-        var fresh = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        // Column -> one fresh value per ordinal.
+        var fresh = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var key in table.UniqueKeys)
         {
@@ -117,27 +131,94 @@ internal static class SeedSqlGenerator
                     $"a copied row cannot get a new value for unique key '{key.Name}' without changing the kept or foreign key columns");
             }
 
-            if (SqlLiterals.Value(candidate.Type, ordinal) is not { } value)
+            var values = new string[ordinals.Count];
+            for (int i = 0; i < ordinals.Count; i++)
             {
-                return SeedSql.Fail($"no value can be generated for column '{candidate.Name}' of type {candidate.Type}");
+                if (SqlLiterals.Value(candidate.Type, ordinals[i]) is not { } value)
+                {
+                    return SeedSql.Fail($"no value can be generated for column '{candidate.Name}' of type {candidate.Type}");
+                }
+
+                values[i] = value;
             }
 
-            fresh[candidate.Name] = value;
-        }
-
-        var columns = new List<string>();
-        var values = new List<string>();
-        foreach (var c in table.Columns.Where(static c => c.IsInsertable))
-        {
-            columns.Add(c.Name);
-            values.Add(overrideMap.GetValueOrDefault(c.Name) ?? fresh.GetValueOrDefault(c.Name) ?? SqlDialect.Q(c.Name));
+            fresh[candidate.Name] = values;
         }
 
         string target = SqlDialect.Q(table.Name);
-        return columns.Count == 0
-            ? SeedSql.Ok($"INSERT INTO {target} DEFAULT VALUES;")
-            : SeedSql.Ok(
-                $"INSERT INTO {target} ({string.Join(", ", columns.Select(SqlDialect.Q))}) SELECT TOP (1) {string.Join(", ", values)} FROM {target};");
+        var insertable = table.Columns.Where(static c => c.IsInsertable).ToList();
+        if (insertable.Count == 0)
+        {
+            return SeedSql.Ok(string.Join(" ", ordinals.Select(_ => $"INSERT INTO {target} DEFAULT VALUES;")));
+        }
+
+        string columnList = string.Join(", ", insertable.Select(static c => SqlDialect.Q(c.Name)));
+        if (ordinals.Count == 1)
+        {
+            var single = insertable.Select(c =>
+                overrideMap.GetValueOrDefault(c.Name) ?? fresh.GetValueOrDefault(c.Name)?[0] ?? SqlDialect.Q(c.Name));
+            return SeedSql.Ok($"INSERT INTO {target} ({columnList}) SELECT TOP (1) {string.Join(", ", single)} FROM {target};");
+        }
+
+        // One scan of one source row, multiplied by a row number [n].[k] that picks each copy's fresh values.
+        var multi = insertable.Select(c =>
+            overrideMap.GetValueOrDefault(c.Name)
+            ?? (fresh.TryGetValue(c.Name, out var perCopy)
+                ? $"CASE [n].[k] {string.Join(" ", perCopy.Select((v, i) => $"WHEN {i + 1} THEN {v}"))} END"
+                : $"[s].{SqlDialect.Q(c.Name)}"));
+        string rowNumbers = string.Join(", ", ordinals.Select((_, i) => $"({i + 1})"));
+        return SeedSql.Ok(
+            $"INSERT INTO {target} ({columnList}) SELECT {string.Join(", ", multi)} FROM (SELECT TOP (1) * FROM {target}) AS [s] CROSS JOIN (VALUES {rowNumbers}) AS [n]([k]);");
+    }
+
+    /// <summary>
+    /// Non-NULL values for the columns a filtered unique index requires to be non-NULL: a principal row's key
+    /// for foreign key columns, otherwise an ordinary value.
+    /// </summary>
+    public static bool TryGetFilterValues(
+        AdversaryScenario scenario,
+        TableMetadata table,
+        out IReadOnlyList<ColumnValue> values,
+        [NotNullWhen(false)] out string? failure)
+    {
+        var result = new List<ColumnValue>();
+        values = result;
+        failure = null;
+        foreach (string name in scenario.NotNullFilterColumns)
+        {
+            if (table.FindColumn(name) is not { } column)
+            {
+                failure = $"filter column '{name}' does not exist at N-1";
+                return false;
+            }
+
+            var fk = table.ForeignKeys.FirstOrDefault(f => f.Columns.Contains(column.Name, StringComparer.OrdinalIgnoreCase));
+            string? value = fk is null
+                ? SqlLiterals.Value(column.Type, ordinal: 1)
+                : $"(SELECT TOP (1) {SqlDialect.Q(fk.PrincipalColumns[IndexOf(fk.Columns, column.Name)])} FROM {SqlDialect.Q(fk.PrincipalTable)})";
+            if (value is null)
+            {
+                failure = $"no value can be generated for column '{column.Name}' of type {column.Type}";
+                return false;
+            }
+
+            result.Add(new ColumnValue(column.Name, value));
+        }
+
+        return true;
+    }
+
+    private static int IndexOf(IReadOnlyList<string> names, string name)
+    {
+        for (int i = 0; i < names.Count; i++)
+        {
+            if (string.Equals(names[i], name, StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     /// <summary>

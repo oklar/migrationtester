@@ -57,15 +57,29 @@ internal static class ScenarioPlanner
 
     private static AdversaryScenario UniqueFromIndex(CreateIndexOperation idx, RelationalSchemaModel schema)
     {
-        var scenario = Duplicate(
-            $"Duplicate values for unique index '{idx.Name}' on '{idx.Table}'", idx, idx.Schema, idx.Table, idx.Columns, schema);
-        return scenario.Skipped || string.IsNullOrWhiteSpace(idx.Filter)
-            ? scenario
-            : scenario with
-            {
-                Skipped = true,
-                SkipReason = "Filtered (partial) unique index; simple duplicate INSERT seeds may not violate the predicate."
-            };
+        string name = $"Duplicate values for unique index '{idx.Name}' on '{idx.Table}'";
+        if (string.IsNullOrWhiteSpace(idx.Filter))
+        {
+            return Duplicate(name, idx, idx.Schema, idx.Table, idx.Columns, schema);
+        }
+
+        if (!NotNullFilter.TryParse(idx.Filter, out var filterColumns))
+        {
+            var unfiltered = Duplicate(name, idx, idx.Schema, idx.Table, idx.Columns, schema);
+            return unfiltered.Skipped
+                ? unfiltered
+                : unfiltered with
+                {
+                    Skipped = true,
+                    SkipReason = $"Filter '{idx.Filter}' is not a plain IS NOT NULL filter; duplicate seeds may not satisfy it."
+                };
+        }
+
+        // Duplicates only count where the filter holds, so the seeded copies get non-NULL filter columns.
+        return Duplicate(name, idx, idx.Schema, idx.Table, idx.Columns, schema, notNullFiltered: true) with
+        {
+            NotNullFilterColumns = filterColumns
+        };
     }
 
     private static AdversaryScenario Duplicate(
@@ -74,7 +88,8 @@ internal static class ScenarioPlanner
         string? schemaName,
         string tableName,
         string[]? keyColumns,
-        RelationalSchemaModel schema)
+        RelationalSchemaModel schema,
+        bool notNullFiltered = false)
     {
         var table = schema.FindTable(schemaName, tableName);
         var columns = keyColumns?.ToList() ?? [];
@@ -82,7 +97,7 @@ internal static class ScenarioPlanner
             ? TableMissing
             : columns.Count == 0
                 ? "Key has no column list; cannot build duplicate seed."
-                : AlreadyUnique(table, columns) is { } existing
+                : AlreadyUnique(table, columns, notNullFiltered) is { } existing
                     ? $"Existing unique key '{existing.Name}' already prevents duplicates in these columns at N-1."
                     : null;
 
@@ -99,11 +114,16 @@ internal static class ScenarioPlanner
         };
     }
 
-    /// <summary>An unfiltered unique key at N-1 whose columns are a subset of <paramref name="columns"/>.</summary>
-    private static UniqueKeyMetadata? AlreadyUnique(TableMetadata table, IReadOnlyList<string> columns)
+    /// <summary>
+    /// A unique key at N-1 whose columns are a subset of <paramref name="columns"/>. When the new index is itself
+    /// IS NOT NULL filtered, an existing IS NOT NULL filtered key counts too (an index rename via drop and create).
+    /// </summary>
+    private static UniqueKeyMetadata? AlreadyUnique(TableMetadata table, IReadOnlyList<string> columns, bool notNullFiltered)
     {
         var set = new HashSet<string>(columns, StringComparer.OrdinalIgnoreCase);
-        return table.UniqueKeys.FirstOrDefault(k => k.Filter is null && k.Columns.All(set.Contains));
+        return table.UniqueKeys.FirstOrDefault(k =>
+            k.Columns.All(set.Contains)
+            && (k.Filter is null || (notNullFiltered && NotNullFilter.TryParse(k.Filter, out _))));
     }
 
     private static AdversaryScenario ForeignKeyScenario(AddForeignKeyOperation fk, RelationalSchemaModel schema)

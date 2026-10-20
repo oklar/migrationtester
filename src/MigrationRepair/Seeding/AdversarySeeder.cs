@@ -84,7 +84,20 @@ internal static class AdversarySeeder
             IReadOnlyList<ColumnValue> planted = [];
             if (scenario.Kind == AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint)
             {
-                statement = SeedSqlGenerator.CopyRow(table, scenario.Columns, [], NextOrdinal(table.Name));
+                if (scenario.NotNullFilterColumns.Count == 0)
+                {
+                    statement = SeedSqlGenerator.CopyRow(table, scenario.Columns, [], NextOrdinal(table.Name));
+                }
+                else if (SeedSqlGenerator.TryGetFilterValues(scenario, table, out var filterValues, out string? filterFailure))
+                {
+                    // Two new rows, both inside the filter; existing rows may hold NULLs other scenarios planted.
+                    statement = SeedSqlGenerator.CopyRows(
+                        table, scenario.Columns, filterValues, [NextOrdinal(table.Name), NextOrdinal(table.Name)]);
+                }
+                else
+                {
+                    return filterFailure;
+                }
             }
             else if (!SeedSqlGenerator.TryGetBadValues(scenario, table, out planted, out string? failure))
             {

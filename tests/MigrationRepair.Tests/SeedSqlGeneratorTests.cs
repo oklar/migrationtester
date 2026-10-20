@@ -188,6 +188,45 @@ public sealed class SeedSqlGeneratorTests
     }
 
     [Fact]
+    public void CopyRows_inserts_copies_of_one_source_row_with_fresh_values_per_copy()
+    {
+        var users = new TableMetadata
+        {
+            Name = new TableName("dbo", "Users"),
+            Columns = [Col("Id", "uniqueidentifier"), Col("Email", "nvarchar(200)", nullable: true), Col("Name", "nvarchar(50)")],
+            UniqueKeys = [PrimaryKey("Id")]
+        };
+
+        var sql = SeedSqlGenerator.CopyRows(users, ["Email"], [new ColumnValue("Email", "N'v1'")], [2, 3]);
+
+        Assert.Equal(
+            "INSERT INTO [dbo].[Users] ([Id], [Email], [Name]) SELECT "
+            + "CASE [n].[k] WHEN 1 THEN '00000000-0000-0000-0000-000000000002' WHEN 2 THEN '00000000-0000-0000-0000-000000000003' END, "
+            + "N'v1', [s].[Name] FROM (SELECT TOP (1) * FROM [dbo].[Users]) AS [s] CROSS JOIN (VALUES (1), (2)) AS [n]([k]);",
+            sql.Sql);
+    }
+
+    [Fact]
+    public void TryGetFilterValues_takes_foreign_key_filter_column_from_principal()
+    {
+        var users = new TableMetadata
+        {
+            Name = new TableName("dbo", "Users"),
+            Columns = [Col("Id", "int", identity: true), Col("Email", "nvarchar(200)", nullable: true), Col("ProfileId", "int", nullable: true)],
+            ForeignKeys = [ForeignKey("ProfileId", "Profiles")]
+        };
+        var scenario = Scenario(AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint, "ProfileId") with
+        {
+            NotNullFilterColumns = ["Email", "ProfileId"]
+        };
+
+        Assert.True(SeedSqlGenerator.TryGetFilterValues(scenario, users, out var values, out _));
+        Assert.Equal(
+            [new ColumnValue("Email", "N'v1'"), new ColumnValue("ProfileId", "(SELECT TOP (1) [Id] FROM [dbo].[Profiles])")],
+            values);
+    }
+
+    [Fact]
     public void UpdateOneRow_sets_values_on_a_single_row()
     {
         string sql = SeedSqlGenerator.UpdateOneRow(Table("Items"), [new ColumnValue("Name", "NULL"), new ColumnValue("Qty", "32768")]);

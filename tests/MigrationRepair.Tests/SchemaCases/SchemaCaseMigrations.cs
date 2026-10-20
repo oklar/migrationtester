@@ -277,6 +277,57 @@ public sealed class CreateTickets : Migration
             });
 }
 
+public sealed class FilteredUniqueContext(DbContextOptions<FilteredUniqueContext> options) : DbContext(options);
+
+[DbContext(typeof(FilteredUniqueContext))]
+[Migration("20260101000001_CreateProfilesAndUsers")]
+public sealed class CreateProfilesAndUsers : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.CreateTable(
+            name: "Profiles",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                Bio = table.Column<string>("nvarchar(max)", nullable: true)
+            },
+            constraints: table => table.PrimaryKey("PK_Profiles", x => x.Id));
+
+        migrationBuilder.CreateTable(
+            name: "Users",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                Email = table.Column<string>("nvarchar(200)", maxLength: 200, nullable: true),
+                ProfileId = table.Column<int>("int", nullable: true)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_Users", x => x.Id);
+                table.ForeignKey("FK_Users_Profiles_ProfileId", x => x.ProfileId, "Profiles", "Id");
+            });
+    }
+}
+
+// What EF scaffolds for HasIndex(u => u.Email).IsUnique() on a nullable column.
+[DbContext(typeof(FilteredUniqueContext))]
+[Migration("20260101000002_AddUniqueUserEmail")]
+public sealed class AddUniqueUserEmail : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.CreateIndex("IX_Users_Email", "Users", "Email", unique: true, filter: "[Email] IS NOT NULL");
+}
+
+// What EF scaffolds for an optional one-to-one relationship.
+[DbContext(typeof(FilteredUniqueContext))]
+[Migration("20260101000003_AddUniqueUserProfile")]
+public sealed class AddUniqueUserProfile : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.CreateIndex("IX_Users_ProfileId", "Users", "ProfileId", unique: true, filter: "[ProfileId] IS NOT NULL");
+}
+
 [DbContext(typeof(CheckedStatusContext))]
 [Migration("20260101000002_AddUniqueTicketCode")]
 public sealed class AddUniqueTicketCode : Migration

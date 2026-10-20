@@ -66,4 +66,7 @@ public sealed record AdversaryScenario
 
     /// <summary>SQL literal valid for the column at N-1 that the migration's conversion rejects.</summary>
     internal string? SeedValue { get; init; }
+
+    /// <summary>For filtered unique indexes: columns the filter requires to be non-NULL.</summary>
+    internal IReadOnlyList<string> NotNullFilterColumns { get; init; } = [];
 }

@@ -237,28 +237,41 @@ public static class MigrationAdversaryRunner
             await context.Database.MigrateAsync(prev, cancellationToken).ConfigureAwait(false);
         }
 
-        // First migration: database may not exist until Migrate(target); N-1 has no user tables.
-        var schema = prev is null
-            ? RelationalSchemaModel.Empty
-            : await RelationalSchemaIntrospector.LoadAsync(context.Database.GetDbConnection(), cancellationToken)
-                .ConfigureAwait(false);
-
-        var tables = new HashSet<string>(schema.TableNames, StringComparer.OrdinalIgnoreCase);
-        var scenarios = ScenarioPlanner.Plan(ops, tables);
-
-        var sqlLog = new List<string>();
-        foreach (string sql in SeedSqlGenerator.BaselineInserts(schema))
+        IReadOnlyList<AdversaryScenario> scenarios;
+        IReadOnlyList<string> sqlLog;
+        if (prev is null)
         {
-            await context.Database.ExecuteSqlRawAsync(sql, cancellationToken).ConfigureAwait(false);
-            sqlLog.Add(sql);
+            // First migration: database may not exist until Migrate(target); N-1 has no user tables.
+            scenarios = ScenarioPlanner.Plan(ops, RelationalSchemaModel.Empty);
+            sqlLog = [];
         }
-
-        foreach (var scenario in scenarios.Where(static s => !s.Skipped))
+        else
         {
-            foreach (string sql in SeedSqlGenerator.AdversarialStatements(scenario, schema))
+            var relational = RelationalOptionsExtension.Extract(context.GetService<IDbContextOptions>());
+            await context.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                await context.Database.ExecuteSqlRawAsync(sql, cancellationToken).ConfigureAwait(false);
-                sqlLog.Add(sql);
+                var connection = context.Database.GetDbConnection();
+                var schema = await RelationalSchemaIntrospector.LoadAsync(
+                        connection,
+                        relational.MigrationsHistoryTableSchema,
+                        relational.MigrationsHistoryTableName ?? HistoryRepository.DefaultTableName,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                var seed = await AdversarySeeder.SeedAsync(
+                        connection,
+                        schema,
+                        ScenarioPlanner.Plan(ops, schema),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                scenarios = seed.Scenarios;
+                sqlLog = seed.SqlExecuted;
+                warnings.AddRange(seed.Warnings);
+            }
+            finally
+            {
+                await context.Database.CloseConnectionAsync().ConfigureAwait(false);
             }
         }
 
@@ -316,6 +329,18 @@ public static class MigrationAdversaryRunner
         }
 
         sb.AppendLine();
+        var notExercised = all.Where(static x => x.Skipped).ToList();
+        if (notExercised.Count > 0)
+        {
+            sb.AppendLine("Not exercised (no adversarial data planted):");
+            foreach (var s in notExercised)
+            {
+                sb.AppendLine($" - [{s.Kind}] {s.Name}: {s.SkipReason}");
+            }
+
+            sb.AppendLine();
+        }
+
         sb.AppendLine("SQL repair hints:");
         sb.AppendLine(hints);
         return sb.ToString();

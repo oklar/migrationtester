@@ -1,426 +1,248 @@
-using System.Text;
+using System.Diagnostics.CodeAnalysis;
 using MigrationRepair.Planning;
 using MigrationRepair.Schema;
 
 namespace MigrationRepair.Seeding;
 
-public static class SeedSqlGenerator
+/// <summary>A generated statement, or the reason none could be generated.</summary>
+internal readonly record struct SeedSql(string? Sql, string? Failure)
 {
-    public static IReadOnlyList<string> BaselineInserts(RelationalSchemaModel schema)
+    [MemberNotNullWhen(true, nameof(Sql))]
+    [MemberNotNullWhen(false, nameof(Failure))]
+    public bool Succeeded => Sql is not null;
+
+    public static SeedSql Ok(string sql) => new(sql, null);
+
+    public static SeedSql Fail(string reason) => new(null, reason);
+}
+
+internal readonly record struct ColumnValue(string Column, string Value);
+
+/// <summary>
+/// Seed SQL that stays valid under the N-1 schema: one ordinary row per table whose required foreign
+/// keys copy a principal row's key, single-row UPDATEs that plant a bad value, and row copies that
+/// keep chosen columns identical while giving every existing unique key a new value.
+/// </summary>
+internal static class SeedSqlGenerator
+{
+    public static SeedSql BaselineInsert(TableMetadata table)
     {
-        var order = TableInsertOrder.Topological(schema.TableNames, schema.ForeignKeys);
-        var sql = new List<string>();
-        foreach (string table in order)
+        var fromPrincipal = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var sources = new List<string>();
+        foreach (var fk in table.ForeignKeys)
         {
-            if (!schema.ColumnsByTable.TryGetValue(table, out var cols))
+            // A foreign key whose columns are all nullable is seeded as NULL.
+            if (!fk.Columns.Any(c => table.FindColumn(c) is { IsNullable: false }))
             {
                 continue;
             }
 
-            string? stmt = TryBuildInsertOneRow(table, cols);
-            if (stmt is not null)
+            if (fk.PrincipalTable.Equals(table.Name))
             {
-                sql.Add(stmt);
+                return SeedSql.Fail($"the first row cannot satisfy the required self-referencing foreign key '{fk.Name}'");
+            }
+
+            string alias = SqlDialect.Q($"p{sources.Count}");
+            sources.Add($"{SqlDialect.Q(fk.PrincipalTable)} AS {alias}");
+            for (int i = 0; i < fk.Columns.Count; i++)
+            {
+                fromPrincipal.TryAdd(fk.Columns[i], $"{alias}.{SqlDialect.Q(fk.PrincipalColumns[i])}");
             }
         }
 
-        return sql;
+        var columns = new List<string>();
+        var values = new List<string>();
+        foreach (var c in table.Columns.Where(static c => c.IsInsertable))
+        {
+            string? value = fromPrincipal.GetValueOrDefault(c.Name)
+                ?? (c.IsNullable ? "NULL" : null)
+                ?? (c.HasDefault ? "" : SqlLiterals.Value(c.Type, ordinal: 1));
+            if (value is null)
+            {
+                return SeedSql.Fail($"no value can be generated for column '{c.Name}' of type {c.Type}");
+            }
+
+            // Empty means: leave the column to its DEFAULT.
+            if (value.Length > 0)
+            {
+                columns.Add(c.Name);
+                values.Add(value);
+            }
+        }
+
+        string target = SqlDialect.Q(table.Name);
+        if (columns.Count == 0)
+        {
+            return SeedSql.Ok($"INSERT INTO {target} DEFAULT VALUES;");
+        }
+
+        string columnList = string.Join(", ", columns.Select(SqlDialect.Q));
+        return sources.Count == 0
+            ? SeedSql.Ok($"INSERT INTO {target} ({columnList}) VALUES ({string.Join(", ", values)});")
+            : SeedSql.Ok(
+                $"INSERT INTO {target} ({columnList}) SELECT TOP (1) {string.Join(", ", values)} FROM {string.Join(" CROSS JOIN ", sources)};");
     }
 
-    public static IReadOnlyList<string> AdversarialStatements(
+    public static string UpdateOneRow(TableMetadata table, IReadOnlyList<ColumnValue> assignments)
+        => $"UPDATE TOP (1) {SqlDialect.Q(table.Name)} SET {string.Join(", ", assignments.Select(static a => $"{SqlDialect.Q(a.Column)} = {a.Value}"))};";
+
+    /// <summary>
+    /// Copies one existing row. <paramref name="keep"/> columns stay identical, <paramref name="overrides"/>
+    /// are set, and each existing unique key gets a fresh value in one of its other columns.
+    /// </summary>
+    public static SeedSql CopyRow(
+        TableMetadata table,
+        IReadOnlyCollection<string> keep,
+        IReadOnlyList<ColumnValue> overrides,
+        int ordinal)
+    {
+        var keepSet = new HashSet<string>(keep, StringComparer.OrdinalIgnoreCase);
+        var overrideMap = overrides.ToDictionary(static o => o.Column, static o => o.Value, StringComparer.OrdinalIgnoreCase);
+        var fkColumns = new HashSet<string>(table.ForeignKeys.SelectMany(static f => f.Columns), StringComparer.OrdinalIgnoreCase);
+        var fresh = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var key in table.UniqueKeys)
+        {
+            var keyColumns = key.Columns.Select(table.FindColumn).OfType<ColumnMetadata>().ToList();
+            if (keyColumns.Any(c => c.IsIdentity || fresh.ContainsKey(c.Name)))
+            {
+                continue;
+            }
+
+            var candidate = keyColumns.FirstOrDefault(c =>
+                c.IsInsertable && !keepSet.Contains(c.Name) && !fkColumns.Contains(c.Name) && !overrideMap.ContainsKey(c.Name));
+            if (candidate is null)
+            {
+                return SeedSql.Fail(
+                    $"a copied row cannot get a new value for unique key '{key.Name}' without changing the kept or foreign key columns");
+            }
+
+            if (SqlLiterals.Value(candidate.Type, ordinal) is not { } value)
+            {
+                return SeedSql.Fail($"no value can be generated for column '{candidate.Name}' of type {candidate.Type}");
+            }
+
+            fresh[candidate.Name] = value;
+        }
+
+        var columns = new List<string>();
+        var values = new List<string>();
+        foreach (var c in table.Columns.Where(static c => c.IsInsertable))
+        {
+            columns.Add(c.Name);
+            values.Add(overrideMap.GetValueOrDefault(c.Name) ?? fresh.GetValueOrDefault(c.Name) ?? SqlDialect.Q(c.Name));
+        }
+
+        string target = SqlDialect.Q(table.Name);
+        return columns.Count == 0
+            ? SeedSql.Ok($"INSERT INTO {target} DEFAULT VALUES;")
+            : SeedSql.Ok(
+                $"INSERT INTO {target} ({string.Join(", ", columns.Select(SqlDialect.Q))}) SELECT TOP (1) {string.Join(", ", values)} FROM {target};");
+    }
+
+    /// <summary>
+    /// The column values that make <paramref name="scenario"/>'s migration fail. Empty when the scenario
+    /// only needs rows to exist (NOT NULL column without default) or is planted by copying a row (duplicates).
+    /// </summary>
+    public static bool TryGetBadValues(
         AdversaryScenario scenario,
-        RelationalSchemaModel schema)
+        TableMetadata table,
+        out IReadOnlyList<ColumnValue> values,
+        [NotNullWhen(false)] out string? failure)
     {
-        if (scenario.Skipped)
+        values = [];
+        failure = null;
+        switch (scenario.Kind)
         {
-            return [];
-        }
+            case AdversaryScenarioKind.NonNullableColumnWithNull:
+                if (FindColumn(scenario, table, out var nullable, out failure))
+                {
+                    if (!nullable.IsNullable)
+                    {
+                        failure = $"column '{nullable.Name}' is already NOT NULL at N-1";
+                        return false;
+                    }
 
-        if (!schema.ColumnsByTable.TryGetValue(scenario.Table, out var cols))
-        {
-            return [];
-        }
+                    values = [new ColumnValue(nullable.Name, "NULL")];
+                    return true;
+                }
 
-        return scenario.Kind switch
-        {
-            AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint => DuplicateRows(scenario, schema, cols),
-            AdversaryScenarioKind.ForeignKeyOrphan => OrphanRow(scenario, schema, cols),
-            AdversaryScenarioKind.NonNullableColumnWithNull => NullOutColumn(scenario, schema, cols),
-            AdversaryScenarioKind.MaxLengthExceededAfterShrink => LongValue(scenario, schema, cols),
-            AdversaryScenarioKind.ColumnTypeConversionIncompatible => IncompatibleValue(scenario),
-            AdversaryScenarioKind.DecimalPrecisionOverflow => OverflowValue(scenario),
-            AdversaryScenarioKind.NotNullColumnAddedWithoutDefault => [],
-            _ => []
-        };
+                return false;
+
+            case AdversaryScenarioKind.MaxLengthExceededAfterShrink:
+                if (!FindColumn(scenario, table, out var sized, out failure))
+                {
+                    return false;
+                }
+
+                int length = (scenario.NewMaxLength ?? 0) + 1;
+                if (sized.Type.Length is int oldLength && oldLength != SqlType.Max && oldLength < length)
+                {
+                    failure = $"column '{sized.Name}' ({sized.Type}) cannot hold more than {scenario.NewMaxLength} at N-1";
+                    return false;
+                }
+
+                if (SqlLiterals.LongValue(sized.Type, length) is not { } longValue)
+                {
+                    failure = $"column '{sized.Name}' ({sized.Type}) is not a string or binary column at N-1";
+                    return false;
+                }
+
+                values = [new ColumnValue(sized.Name, longValue)];
+                return true;
+
+            case AdversaryScenarioKind.ColumnTypeConversionIncompatible:
+            case AdversaryScenarioKind.DecimalPrecisionOverflow:
+                if (!FindColumn(scenario, table, out var converted, out failure))
+                {
+                    return false;
+                }
+
+                if (scenario.SeedValue is null)
+                {
+                    failure = "no value is known that fails this conversion";
+                    return false;
+                }
+
+                values = [new ColumnValue(converted.Name, scenario.SeedValue)];
+                return true;
+
+            case AdversaryScenarioKind.ForeignKeyOrphan:
+                var orphan = new List<ColumnValue>();
+                foreach (string name in scenario.Columns)
+                {
+                    if (table.FindColumn(name) is not { } column)
+                    {
+                        failure = $"column '{name}' does not exist at N-1";
+                        return false;
+                    }
+
+                    if (SqlLiterals.OrphanValue(column.Type) is not { } value)
+                    {
+                        failure = $"no orphan value can be generated for column '{name}' of type {column.Type}";
+                        return false;
+                    }
+
+                    orphan.Add(new ColumnValue(column.Name, value));
+                }
+
+                values = orphan;
+                return true;
+
+            default:
+                return true;
+        }
     }
 
-    private static IReadOnlyList<string> DuplicateRows(
-        AdversaryScenario s,
-        RelationalSchemaModel schema,
-        IReadOnlyList<TableColumnMetadata> cols)
+    private static bool FindColumn(
+        AdversaryScenario scenario,
+        TableMetadata table,
+        [NotNullWhen(true)] out ColumnMetadata? column,
+        [NotNullWhen(false)] out string? failure)
     {
-        string t = s.Table;
-        var insertCols = new List<string>();
-        var vals1 = new List<string>();
-        var vals2 = new List<string>();
-
-        foreach (var c in cols.OrderBy(static x => x.Ordinal))
-        {
-            if (c.IsPrimaryKey && c.IsAutoIncrement)
-            {
-                continue;
-            }
-
-            insertCols.Add(c.Name);
-            if (s.Columns.Any(u => string.Equals(u, c.Name, StringComparison.OrdinalIgnoreCase)))
-            {
-                string dup = DuplicateLiteral(c);
-                vals1.Add(dup);
-                vals2.Add(dup);
-            }
-            else if (c.IsPrimaryKey)
-            {
-                vals1.Add(DefaultLiteral(c, seed: 1));
-                vals2.Add(DefaultLiteral(c, seed: 2));
-            }
-            else
-            {
-                string lit = DefaultLiteral(c, seed: 1);
-                vals1.Add(lit);
-                vals2.Add(AdjustLiteralForSecondRow(c, lit));
-            }
-        }
-
-        if (insertCols.Count == 0)
-        {
-            return [];
-        }
-
-        string tableQ = SqlDialect.Q(t);
-        string colList = string.Join(", ", insertCols.Select(c => SqlDialect.Q(c)));
-        return
-        [
-            $"INSERT INTO {tableQ} ({colList}) VALUES ({string.Join(", ", vals1)});",
-            $"INSERT INTO {tableQ} ({colList}) VALUES ({string.Join(", ", vals2)});"
-        ];
-    }
-
-    private static string AdjustLiteralForSecondRow(TableColumnMetadata c, string firstLit)
-    {
-        string normalized = NormalizeTypeName(c.DeclaredType ?? "");
-        if (normalized is "TINYINT" or "SMALLINT" or "INT" or "BIGINT" && firstLit == "0")
-        {
-            return "1";
-        }
-
-        if (firstLit.StartsWith('\'') && firstLit.EndsWith('\''))
-        {
-            return SqlString(firstLit.Trim('\'') + "-b");
-        }
-
-        return firstLit;
-    }
-
-    private static string DuplicateLiteral(TableColumnMetadata c)
-    {
-        string normalized = NormalizeTypeName(c.DeclaredType ?? "");
-        return normalized switch
-        {
-            "TINYINT" or "SMALLINT" or "INT" or "BIGINT" => "42",
-            "REAL" or "FLOAT" or "DOUBLE" => "42.0",
-            "DECIMAL" or "NUMERIC" or "MONEY" or "SMALLMONEY" => "42",
-            "BIT" => "1",
-            "UNIQUEIDENTIFIER" => "'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA'",
-            "DATE" or "DATETIME" or "DATETIME2" or "SMALLDATETIME" => "'2000-01-01'",
-            "TIME" => "'00:00:00'",
-            "DATETIMEOFFSET" => "'2000-01-01T00:00:00+00:00'",
-            "BINARY" or "VARBINARY" or "IMAGE" => "0xDEAD",
-            _ => SqlString("adv-dup")
-        };
-    }
-
-    private static IReadOnlyList<string> OrphanRow(
-        AdversaryScenario s,
-        RelationalSchemaModel schema,
-        IReadOnlyList<TableColumnMetadata> cols)
-    {
-        var insertCols = new List<string>();
-        var vals = new List<string>();
-        foreach (var c in cols.OrderBy(static x => x.Ordinal))
-        {
-            if (c.IsPrimaryKey && c.IsAutoIncrement)
-            {
-                continue;
-            }
-
-            insertCols.Add(c.Name);
-            int fkIdx = IndexOfColumn(s.Columns, c.Name);
-            if (fkIdx >= 0 && s.PrincipalColumns is { Count: > 0 })
-            {
-                vals.Add(OrphanFkLiteral(c));
-            }
-            else
-            {
-                vals.Add(DefaultLiteral(c, seed: 99));
-            }
-        }
-
-        if (insertCols.Count == 0)
-        {
-            return [];
-        }
-
-        string tableQ = SqlDialect.Q(s.Table);
-        string colList = string.Join(", ", insertCols.Select(c => SqlDialect.Q(c)));
-        return [$"INSERT INTO {tableQ} ({colList}) VALUES ({string.Join(", ", vals)});"];
-    }
-
-    private static int IndexOfColumn(IReadOnlyList<string> columns, string name)
-    {
-        for (int i = 0; i < columns.Count; i++)
-        {
-            if (string.Equals(columns[i], name, StringComparison.OrdinalIgnoreCase))
-            {
-                return i;
-            }
-        }
-
-        return -1;
-    }
-
-    private static string OrphanFkLiteral(TableColumnMetadata c)
-    {
-        string normalized = NormalizeTypeName(c.DeclaredType ?? "");
-        return normalized switch
-        {
-            "TINYINT" or "SMALLINT" or "INT" or "BIGINT" => "999999999",
-            "UNIQUEIDENTIFIER" => "'00000000-0000-0000-0000-000000000099'",
-            _ => "'__orphan_fk__'"
-        };
-    }
-
-    private static IReadOnlyList<string> NullOutColumn(
-        AdversaryScenario s,
-        RelationalSchemaModel schema,
-        IReadOnlyList<TableColumnMetadata> cols)
-    {
-        if (s.Columns is not { Count: > 0 })
-        {
-            return [];
-        }
-
-        string target = s.Columns[0];
-        var targetCol = cols.FirstOrDefault(c => string.Equals(c.Name, target, StringComparison.OrdinalIgnoreCase));
-        if (targetCol is not { IsNullable: true })
-        {
-            return [];
-        }
-
-        var insertCols = new List<string>();
-        var vals = new List<string>();
-        foreach (var c in cols.OrderBy(static x => x.Ordinal))
-        {
-            if (c.IsPrimaryKey && c.IsAutoIncrement)
-            {
-                continue;
-            }
-
-            insertCols.Add(c.Name);
-            if (string.Equals(c.Name, target, StringComparison.OrdinalIgnoreCase))
-            {
-                vals.Add("NULL");
-            }
-            else if (c.IsNullable)
-            {
-                vals.Add("NULL");
-            }
-            else
-            {
-                vals.Add(DefaultLiteral(c, seed: 2));
-            }
-        }
-
-        if (insertCols.Count == 0)
-        {
-            return [];
-        }
-
-        string tableQ = SqlDialect.Q(s.Table);
-        string colList = string.Join(", ", insertCols.Select(c => SqlDialect.Q(c)));
-        return [$"INSERT INTO {tableQ} ({colList}) VALUES ({string.Join(", ", vals)});"];
-    }
-
-    private static IReadOnlyList<string> LongValue(
-        AdversaryScenario s,
-        RelationalSchemaModel schema,
-        IReadOnlyList<TableColumnMetadata> cols)
-    {
-        if (s.Columns is not { Count: > 0 })
-        {
-            return [];
-        }
-
-        int newMax = s.NewMaxLength ?? 1;
-        string payload = new string('x', Math.Max(newMax + 16, newMax * 2));
-        string tableQ = SqlDialect.Q(s.Table);
-        string colQ = SqlDialect.Q(s.Columns[0]);
-        return [$"UPDATE {tableQ} SET {colQ} = {SqlString(payload)};"];
-    }
-
-    private static IReadOnlyList<string> IncompatibleValue(AdversaryScenario s)
-    {
-        if (s.Columns is not { Count: > 0 } || s.NewColumnType is null)
-        {
-            return [];
-        }
-
-        string tableQ = SqlDialect.Q(s.Table);
-        string colQ = SqlDialect.Q(s.Columns[0]);
-        string poison = PoisonLiteral(s.OldColumnType, s.NewColumnType);
-        return [$"UPDATE {tableQ} SET {colQ} = {poison};"];
-    }
-
-    internal static string PoisonLiteral(string? oldType, string newType)
-    {
-        string nt = NormalizeTypeName(newType);
-        string ot = NormalizeTypeName(oldType ?? "");
-
-        if (nt is "INT" or "BIGINT" or "SMALLINT" or "TINYINT")
-        {
-            if (IsStringType(ot))
-            {
-                return SqlString("__not_a_number__");
-            }
-
-            return ot is "FLOAT" or "REAL" ? "1.5" : SqlString("__bad__");
-        }
-
-        if (nt is "DECIMAL" or "NUMERIC" or "MONEY" or "SMALLMONEY")
-        {
-            return IsStringType(ot) ? SqlString("__not_numeric__") : SqlString("__bad__");
-        }
-
-        if (nt == "UNIQUEIDENTIFIER")
-        {
-            return SqlString("__not_a_guid__");
-        }
-
-        if (nt is "DATE" or "DATETIME" or "DATETIME2" or "SMALLDATETIME" or "DATETIMEOFFSET" or "TIME")
-        {
-            return SqlString("__not_a_date__");
-        }
-
-        if (nt == "BIT")
-        {
-            return IsStringType(ot) ? SqlString("maybe") : SqlString("__bad__");
-        }
-
-        return SqlString("__unconvertible__");
-    }
-
-    private static IReadOnlyList<string> OverflowValue(AdversaryScenario s)
-    {
-        if (s.Columns is not { Count: > 0 } || s.NewPrecision is not int newP)
-        {
-            return [];
-        }
-
-        int newScale = s.NewScale ?? 0;
-        int intDigits = newP - newScale;
-
-        string overflow = intDigits > 0
-            ? new string('9', intDigits + 1) + (newScale > 0 ? "." + new string('9', newScale) : "")
-            : "1" + new string('0', newScale + 1);
-
-        string tableQ = SqlDialect.Q(s.Table);
-        string colQ = SqlDialect.Q(s.Columns[0]);
-        return [$"UPDATE {tableQ} SET {colQ} = {overflow};"];
-    }
-
-    private static string NormalizeTypeName(string sqlType)
-    {
-        string t = sqlType.Trim();
-        int paren = t.IndexOf('(');
-        if (paren > 0)
-        {
-            t = t[..paren].Trim();
-        }
-
-        return t.ToUpperInvariant();
-    }
-
-    private static bool IsStringType(string normalized)
-        => normalized is "NVARCHAR" or "VARCHAR" or "NCHAR" or "CHAR"
-            or "TEXT" or "NTEXT" or "XML";
-
-    private static string? TryBuildInsertOneRow(
-        string table,
-        IReadOnlyList<TableColumnMetadata> cols)
-    {
-        var insertCols = new List<string>();
-        var vals = new List<string>();
-        foreach (var c in cols.OrderBy(static x => x.Ordinal))
-        {
-            if (c.IsPrimaryKey && c.IsAutoIncrement)
-            {
-                continue;
-            }
-
-            insertCols.Add(c.Name);
-            if (c.IsNullable)
-            {
-                vals.Add("NULL");
-            }
-            else
-            {
-                vals.Add(DefaultLiteral(c, seed: 1));
-            }
-        }
-
-        if (insertCols.Count == 0)
-        {
-            return null;
-        }
-
-        string tableQ = SqlDialect.Q(table);
-        string colList = string.Join(", ", insertCols.Select(c => SqlDialect.Q(c)));
-        return $"INSERT INTO {tableQ} ({colList}) VALUES ({string.Join(", ", vals)});";
-    }
-
-    private static string DefaultLiteral(TableColumnMetadata c, int seed)
-    {
-        string normalized = NormalizeTypeName(c.DeclaredType ?? "");
-        return normalized switch
-        {
-            "TINYINT" or "SMALLINT" or "INT" or "BIGINT" => seed.ToString(),
-            "REAL" or "FLOAT" or "DOUBLE" => seed.ToString(),
-            "DECIMAL" or "NUMERIC" or "MONEY" or "SMALLMONEY" => seed.ToString(),
-            "BIT" => "0",
-            "BINARY" or "VARBINARY" or "IMAGE" => "0x00",
-            "UNIQUEIDENTIFIER" => $"'{new Guid(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, (byte)seed)}'",
-            "TIME" => "'00:00:00'",
-            "DATETIMEOFFSET" => "'2000-01-01T00:00:00+00:00'",
-            "DATE" or "DATETIME" or "DATETIME2" or "SMALLDATETIME" => "'2000-01-01'",
-            _ => SqlString($"s{seed}")
-        };
-    }
-
-    private static string SqlString(string s)
-    {
-        var sb = new StringBuilder("N'");
-        foreach (char ch in s)
-        {
-            if (ch == '\'')
-            {
-                sb.Append("''");
-            }
-            else
-            {
-                sb.Append(ch);
-            }
-        }
-
-        sb.Append('\'');
-        return sb.ToString();
+        string name = scenario.Columns.Count > 0 ? scenario.Columns[0] : "";
+        column = table.FindColumn(name);
+        failure = column is null ? $"column '{name}' does not exist at N-1" : null;
+        return column is not null;
     }
 }

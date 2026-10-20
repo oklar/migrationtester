@@ -2,10 +2,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
-namespace MigrationRepair.Tests.KnownIssues;
+namespace MigrationRepair.Tests.SchemaCases;
 
-// Hand-written two-step migration chains, one context per case so a seeding crash in one
-// case cannot mask another. No designer files or snapshots: the runner only needs Up().
+// Hand-written migration chains, one context per case so each case seeds its own small schema.
+// No designer files or snapshots: the runner only needs Up().
 
 public sealed class RowVersionContext(DbContextOptions<RowVersionContext> options) : DbContext(options);
 
@@ -219,4 +219,68 @@ public sealed class IncreaseAmountScale : Migration
             oldType: "decimal(18,2)",
             oldPrecision: 18,
             oldScale: 2);
+}
+
+public sealed class RequiredAndShorterContext(DbContextOptions<RequiredAndShorterContext> options) : DbContext(options);
+
+[DbContext(typeof(RequiredAndShorterContext))]
+[Migration("20260101000001_CreatePeople")]
+public sealed class CreatePeople : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.CreateTable(
+            name: "People",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                Name = table.Column<string>("nvarchar(100)", maxLength: 100, nullable: true)
+            },
+            constraints: table => table.PrimaryKey("PK_People", x => x.Id));
+}
+
+[DbContext(typeof(RequiredAndShorterContext))]
+[Migration("20260101000002_MakeNameRequiredAndShorter")]
+public sealed class MakeNameRequiredAndShorter : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.AlterColumn<string>(
+            name: "Name",
+            table: "People",
+            type: "nvarchar(20)",
+            maxLength: 20,
+            nullable: false,
+            oldClrType: typeof(string),
+            oldType: "nvarchar(100)",
+            oldMaxLength: 100,
+            oldNullable: true);
+}
+
+public sealed class CheckedStatusContext(DbContextOptions<CheckedStatusContext> options) : DbContext(options);
+
+[DbContext(typeof(CheckedStatusContext))]
+[Migration("20260101000001_CreateTickets")]
+public sealed class CreateTickets : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.CreateTable(
+            name: "Tickets",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                Status = table.Column<string>("nvarchar(20)", maxLength: 20, nullable: false),
+                Code = table.Column<string>("nvarchar(50)", maxLength: 50, nullable: false)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_Tickets", x => x.Id);
+                table.CheckConstraint("CK_Tickets_Status", "[Status] IN (N'Open', N'Closed')");
+            });
+}
+
+[DbContext(typeof(CheckedStatusContext))]
+[Migration("20260101000002_AddUniqueTicketCode")]
+public sealed class AddUniqueTicketCode : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.CreateIndex("IX_Tickets_Code", "Tickets", "Code", unique: true);
 }

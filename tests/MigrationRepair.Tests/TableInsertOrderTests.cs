@@ -1,101 +1,67 @@
 using MigrationRepair.Schema;
 using MigrationRepair.Seeding;
 using Xunit;
+using static MigrationRepair.Tests.TestSchema;
 
 namespace MigrationRepair.Tests;
 
 public sealed class TableInsertOrderTests
 {
     [Fact]
-    public void Topological_self_referencing_fk_does_not_trigger_cycle_fallback()
-    {
-        var tables = new List<string> { "Zebra", "Alpha" };
-        var fks = new List<ForeignKeyEdge>
-        {
-            new()
-            {
-                DependentTable = "Alpha",
-                PrincipalTable = "Alpha",
-                DependentColumns = ["ParentId"],
-                PrincipalColumns = ["Id"]
-            },
-            new()
-            {
-                DependentTable = "Alpha",
-                PrincipalTable = "Zebra",
-                DependentColumns = ["ZebraId"],
-                PrincipalColumns = ["Id"]
-            }
-        };
-
-        var result = TableInsertOrder.Topological(tables, fks);
-
-        // Correct topological order: Zebra (principal) before Alpha (dependent).
-        // Without the self-ref skip, the false cycle would fall back to alphabetical ["Alpha", "Zebra"].
-        Assert.Equal(2, result.Count);
-        Assert.Equal("Zebra", result[0]);
-        Assert.Equal("Alpha", result[1]);
-    }
-
-    [Fact]
     public void Topological_orders_principal_before_dependent()
     {
-        var tables = new List<string> { "Orders", "Customers" };
-        var fks = new List<ForeignKeyEdge>
-        {
-            new()
-            {
-                DependentTable = "Orders",
-                PrincipalTable = "Customers",
-                DependentColumns = ["CustomerId"],
-                PrincipalColumns = ["Id"]
-            }
-        };
+        var orders = Dependent("Orders", "CustomerId", "Customers", nullable: false);
+        var customers = Table("Customers", Col("Id", "int", identity: true));
 
-        var result = TableInsertOrder.Topological(tables, fks);
+        var result = TableInsertOrder.Topological([orders, customers]);
 
-        Assert.Equal(2, result.Count);
-        Assert.Equal("Customers", result[0]);
-        Assert.Equal("Orders", result[1]);
+        Assert.Equal(["Customers", "Orders"], result.Select(static t => t.Name.Name));
     }
 
     [Fact]
-    public void Topological_cycle_falls_back_to_alphabetical()
+    public void Topological_ignores_nullable_foreign_keys()
     {
-        var tables = new List<string> { "B", "A" };
-        var fks = new List<ForeignKeyEdge>
-        {
-            new()
-            {
-                DependentTable = "A",
-                PrincipalTable = "B",
-                DependentColumns = ["BId"],
-                PrincipalColumns = ["Id"]
-            },
-            new()
-            {
-                DependentTable = "B",
-                PrincipalTable = "A",
-                DependentColumns = ["AId"],
-                PrincipalColumns = ["Id"]
-            }
-        };
+        var orders = Dependent("Orders", "CustomerId", "Customers", nullable: true);
+        var customers = Table("Customers", Col("Id", "int", identity: true));
 
-        var result = TableInsertOrder.Topological(tables, fks);
+        var result = TableInsertOrder.Topological([orders, customers]);
 
-        Assert.Equal(2, result.Count);
-        Assert.Equal("A", result[0]);
-        Assert.Equal("B", result[1]);
+        Assert.Equal(["Orders", "Customers"], result.Select(static t => t.Name.Name));
     }
 
     [Fact]
-    public void Topological_no_fks_preserves_input_order()
+    public void Topological_self_referencing_fk_does_not_count_as_cycle()
     {
-        var tables = new List<string> { "C", "A", "B" };
-        List<ForeignKeyEdge> fks = [];
+        var zebra = Table("Zebra", Col("Id", "int", identity: true));
+        var alpha = new TableMetadata
+        {
+            Name = new TableName("dbo", "Alpha"),
+            Columns = [Col("Id", "int", identity: true), Col("ParentId", "int"), Col("ZebraId", "int")],
+            ForeignKeys = [ForeignKey("ParentId", "Alpha"), ForeignKey("ZebraId", "Zebra")]
+        };
 
-        var result = TableInsertOrder.Topological(tables, fks);
+        var result = TableInsertOrder.Topological([alpha, zebra]);
 
-        Assert.Equal(3, result.Count);
+        Assert.Equal(["Zebra", "Alpha"], result.Select(static t => t.Name.Name));
     }
+
+    [Fact]
+    public void Topological_required_cycle_is_appended_by_name()
+    {
+        var b = Dependent("B", "AId", "A", nullable: false);
+        var a = Dependent("A", "BId", "B", nullable: false);
+        var c = Table("C", Col("Id", "int", identity: true));
+
+        var result = TableInsertOrder.Topological([b, a, c]);
+
+        Assert.Equal(["C", "A", "B"], result.Select(static t => t.Name.Name));
+    }
+
+    private static TableMetadata Dependent(string name, string column, string principal, bool nullable) =>
+        new()
+        {
+            Name = new TableName("dbo", name),
+            Columns = [Col("Id", "int", identity: true), Col(column, "int", nullable: nullable)],
+            ForeignKeys = [ForeignKey(column, principal)]
+        };
 }

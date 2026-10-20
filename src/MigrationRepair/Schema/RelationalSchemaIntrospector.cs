@@ -4,12 +4,17 @@ using System.Data.Common;
 namespace MigrationRepair.Schema;
 
 /// <summary>
-/// Reads table/column/FK metadata from a live SQL Server database (after migrate to N-1).
+/// Reads tables, columns, unique keys and foreign keys from a live SQL Server database (after migrate to N-1).
+/// Covers every user schema; skips system-versioned history tables and the EF migrations history table.
 /// </summary>
 internal static class RelationalSchemaIntrospector
 {
+    private const string UserTableFilter = "t.is_ms_shipped = 0 AND t.temporal_type <> 1";
+
     public static async Task<RelationalSchemaModel> LoadAsync(
         DbConnection connection,
+        string? historyTableSchema,
+        string historyTableName,
         CancellationToken cancellationToken = default)
     {
         bool shouldClose = connection.State == ConnectionState.Closed;
@@ -20,7 +25,8 @@ internal static class RelationalSchemaIntrospector
 
         try
         {
-            return await LoadSqlServer(connection, cancellationToken).ConfigureAwait(false);
+            return await LoadSqlServer(connection, historyTableSchema, historyTableName, cancellationToken)
+                .ConfigureAwait(false);
         }
         finally
         {
@@ -33,140 +39,194 @@ internal static class RelationalSchemaIntrospector
 
     private static async Task<RelationalSchemaModel> LoadSqlServer(
         DbConnection connection,
+        string? historyTableSchema,
+        string historyTableName,
         CancellationToken cancellationToken)
     {
-        var tables = new List<string>();
+        string defaultSchema = "dbo";
         await using (var cmd = connection.CreateCommand())
         {
-            cmd.CommandText = """
-                SELECT t.name
-                FROM sys.tables t
-                WHERE t.schema_id = SCHEMA_ID('dbo')
-                  AND t.is_ms_shipped = 0
-                  AND t.name <> '__EFMigrationsHistory'
-                ORDER BY t.name;
-                """;
-            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            cmd.CommandText = "SELECT SCHEMA_NAME();";
+            if (await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is string s)
             {
-                tables.Add(reader.GetString(0));
+                defaultSchema = s;
             }
         }
 
-        var columns = new Dictionary<string, List<TableColumnMetadata>>(StringComparer.OrdinalIgnoreCase);
-        await using (var cmd = connection.CreateCommand())
-        {
-            cmd.CommandText = """
-                SELECT
-                    t.name AS table_name,
-                    c.name AS col_name,
-                    c.column_id,
-                    c.is_nullable,
-                    ty.name AS type_name,
-                    CASE WHEN pk.column_id IS NOT NULL THEN 1 ELSE 0 END AS is_pk,
-                    CASE WHEN c.is_identity = 1 THEN 1 ELSE 0 END AS is_identity
-                FROM sys.columns c
-                INNER JOIN sys.tables t ON c.object_id = t.object_id
-                INNER JOIN sys.types ty ON c.user_type_id = ty.user_type_id
-                LEFT JOIN (
-                    SELECT ic.object_id, ic.column_id
-                    FROM sys.index_columns ic
-                    INNER JOIN sys.indexes i ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-                    WHERE i.is_primary_key = 1
-                ) pk ON pk.object_id = c.object_id AND pk.column_id = c.column_id
-                WHERE t.schema_id = SCHEMA_ID('dbo')
-                  AND t.is_ms_shipped = 0
-                  AND t.name <> '__EFMigrationsHistory'
-                  AND c.is_computed = 0
-                ORDER BY t.name, c.column_id;
-                """;
-            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        var history = new TableName(historyTableSchema ?? defaultSchema, historyTableName);
+        var tables = new List<TableName>();
+        await ReadAsync(connection, $"""
+            SELECT s.name, t.name
+            FROM sys.tables t
+            INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+            WHERE {UserTableFilter}
+            ORDER BY s.name, t.name;
+            """,
+            reader =>
             {
-                string tableName = reader.GetString(0);
-                string colName = reader.GetString(1);
-                bool nullable = reader.GetBoolean(3);
-                string dataType = reader.GetString(4);
-                bool isPk = reader.GetInt32(5) != 0;
-                bool isIdentity = reader.GetInt32(6) != 0;
-                bool isRowVersion = string.Equals(dataType, "rowversion", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(dataType, "timestamp", StringComparison.OrdinalIgnoreCase);
-
-                if (!columns.TryGetValue(tableName, out var list))
+                var name = new TableName(reader.GetString(0), reader.GetString(1));
+                if (!name.Equals(history))
                 {
-                    list = [];
-                    columns[tableName] = list;
+                    tables.Add(name);
+                }
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        var included = new HashSet<TableName>(tables);
+        var columns = tables.ToDictionary(static t => t, static _ => new List<ColumnMetadata>());
+        await ReadAsync(connection, $"""
+            SELECT
+                s.name,
+                t.name,
+                c.name,
+                COALESCE(CASE WHEN ty.is_user_defined = 1 THEN bt.name END, ty.name) AS type_name,
+                c.max_length,
+                c.precision,
+                c.scale,
+                c.is_nullable,
+                c.is_identity,
+                c.is_computed,
+                CASE WHEN c.generated_always_type <> 0 THEN 1 ELSE 0 END AS is_generated_always,
+                CASE WHEN c.default_object_id <> 0 THEN 1 ELSE 0 END AS has_default
+            FROM sys.columns c
+            INNER JOIN sys.tables t ON t.object_id = c.object_id
+            INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+            INNER JOIN sys.types ty ON ty.user_type_id = c.user_type_id
+            LEFT JOIN sys.types bt ON bt.user_type_id = c.system_type_id
+            WHERE {UserTableFilter}
+            ORDER BY s.name, t.name, c.column_id;
+            """,
+            reader =>
+            {
+                var table = new TableName(reader.GetString(0), reader.GetString(1));
+                if (!columns.TryGetValue(table, out var list))
+                {
+                    return;
                 }
 
-                list.Add(new TableColumnMetadata
+                list.Add(new ColumnMetadata
                 {
-                    TableName = tableName,
-                    Name = colName,
-                    Ordinal = list.Count,
-                    IsNullable = nullable,
-                    DeclaredType = dataType,
-                    IsPrimaryKey = isPk,
-                    IsAutoIncrement = isIdentity || isRowVersion
+                    Name = reader.GetString(2),
+                    Type = SqlType.FromCatalog(reader.GetString(3), reader.GetInt16(4), reader.GetByte(5), reader.GetByte(6)),
+                    IsNullable = reader.GetBoolean(7),
+                    IsIdentity = reader.GetBoolean(8),
+                    IsComputed = reader.GetBoolean(9),
+                    IsGeneratedAlways = reader.GetInt32(10) != 0,
+                    HasDefault = reader.GetInt32(11) != 0
                 });
-            }
-        }
+            },
+            cancellationToken).ConfigureAwait(false);
 
-        var fks = new List<ForeignKeyEdge>();
-        await using (var cmdFk = connection.CreateCommand())
-        {
-            cmdFk.CommandText = """
-                SELECT
-                    fk.object_id,
-                    OBJECT_NAME(fk.parent_object_id) AS dep_table,
-                    COL_NAME(fc.parent_object_id, fc.parent_column_id) AS dep_col,
-                    OBJECT_NAME(fk.referenced_object_id) AS prin_table,
-                    COL_NAME(fc.referenced_object_id, fc.referenced_column_id) AS prin_col,
-                    fc.constraint_column_id AS ord
-                FROM sys.foreign_keys fk
-                INNER JOIN sys.foreign_key_columns fc ON fk.object_id = fc.constraint_object_id
-                INNER JOIN sys.tables t ON fk.parent_object_id = t.object_id
-                WHERE t.schema_id = SCHEMA_ID('dbo')
-                ORDER BY fk.object_id, fc.constraint_column_id;
-                """;
-            await using var reader = await cmdFk.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            var group = new Dictionary<int, List<(string DepTable, string From, string PrinTable, string To, int Ord)>>();
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        var uniqueKeys = tables.ToDictionary(static t => t, static _ => new List<UniqueKeyMetadata>());
+        var keyColumns = new Dictionary<(TableName Table, int IndexId), (UniqueKeyMetadata Key, List<string> Columns)>();
+        await ReadAsync(connection, $"""
+            SELECT s.name, t.name, i.index_id, i.name, i.is_primary_key, i.filter_definition, c.name
+            FROM sys.indexes i
+            INNER JOIN sys.tables t ON t.object_id = i.object_id
+            INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+            INNER JOIN sys.index_columns ic
+                ON ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.is_included_column = 0
+            INNER JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+            WHERE {UserTableFilter} AND i.is_unique = 1 AND i.is_hypothetical = 0
+            ORDER BY s.name, t.name, i.index_id, ic.key_ordinal;
+            """,
+            reader =>
             {
-                int oid = reader.GetInt32(0);
-                string depTable = reader.GetString(1);
-                string depCol = reader.GetString(2);
-                string prinTable = reader.GetString(3);
-                string prinCol = reader.GetString(4);
-                int ord = reader.GetInt32(5);
-                if (!group.TryGetValue(oid, out var rows))
+                var table = new TableName(reader.GetString(0), reader.GetString(1));
+                if (!uniqueKeys.TryGetValue(table, out var list))
                 {
-                    rows = [];
-                    group[oid] = rows;
+                    return;
                 }
 
-                rows.Add((depTable, depCol, prinTable, prinCol, ord));
-            }
-
-            foreach (var rows in group.Values)
-            {
-                var first = rows[0];
-                var ordered = rows.OrderBy(static r => r.Ord).ToList();
-                fks.Add(new ForeignKeyEdge
+                var id = (table, reader.GetInt32(2));
+                if (!keyColumns.TryGetValue(id, out var entry))
                 {
-                    DependentTable = first.DepTable,
-                    PrincipalTable = first.PrinTable,
-                    DependentColumns = ordered.Select(static r => r.From).ToList(),
-                    PrincipalColumns = ordered.Select(static r => r.To).ToList()
-                });
-            }
-        }
+                    var keyCols = new List<string>();
+                    entry = (new UniqueKeyMetadata
+                    {
+                        Name = reader.GetString(3),
+                        Columns = keyCols,
+                        IsPrimaryKey = reader.GetBoolean(4),
+                        Filter = reader.IsDBNull(5) ? null : reader.GetString(5)
+                    }, keyCols);
+                    keyColumns[id] = entry;
+                    list.Add(entry.Key);
+                }
+
+                entry.Columns.Add(reader.GetString(6));
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        var foreignKeys = tables.ToDictionary(static t => t, static _ => new List<ForeignKeyMetadata>());
+        var fkColumns = new Dictionary<int, (List<string> Columns, List<string> PrincipalColumns)>();
+        await ReadAsync(connection, $"""
+            SELECT fk.object_id, s.name, t.name, fk.name, rs.name, rt.name, pc.name, rc.name
+            FROM sys.foreign_keys fk
+            INNER JOIN sys.tables t ON t.object_id = fk.parent_object_id
+            INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+            INNER JOIN sys.tables rt ON rt.object_id = fk.referenced_object_id
+            INNER JOIN sys.schemas rs ON rs.schema_id = rt.schema_id
+            INNER JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
+            INNER JOIN sys.columns pc ON pc.object_id = fkc.parent_object_id AND pc.column_id = fkc.parent_column_id
+            INNER JOIN sys.columns rc ON rc.object_id = fkc.referenced_object_id AND rc.column_id = fkc.referenced_column_id
+            WHERE {UserTableFilter}
+            ORDER BY fk.object_id, fkc.constraint_column_id;
+            """,
+            reader =>
+            {
+                var table = new TableName(reader.GetString(1), reader.GetString(2));
+                var principal = new TableName(reader.GetString(4), reader.GetString(5));
+                if (!foreignKeys.TryGetValue(table, out var list) || !included.Contains(principal))
+                {
+                    return;
+                }
+
+                int id = reader.GetInt32(0);
+                if (!fkColumns.TryGetValue(id, out var entry))
+                {
+                    entry = ([], []);
+                    fkColumns[id] = entry;
+                    list.Add(new ForeignKeyMetadata
+                    {
+                        Name = reader.GetString(3),
+                        Columns = entry.Columns,
+                        PrincipalTable = principal,
+                        PrincipalColumns = entry.PrincipalColumns
+                    });
+                }
+
+                entry.Columns.Add(reader.GetString(6));
+                entry.PrincipalColumns.Add(reader.GetString(7));
+            },
+            cancellationToken).ConfigureAwait(false);
 
         return new RelationalSchemaModel
         {
-            TableNames = tables,
-            ColumnsByTable = columns.ToDictionary(static kv => kv.Key, static kv => (IReadOnlyList<TableColumnMetadata>)kv.Value),
-            ForeignKeys = fks
+            DefaultSchema = defaultSchema,
+            Tables = tables
+                .Select(t => new TableMetadata
+                {
+                    Name = t,
+                    Columns = columns[t],
+                    UniqueKeys = uniqueKeys[t],
+                    ForeignKeys = foreignKeys[t]
+                })
+                .ToList()
         };
     }
 
+    private static async Task ReadAsync(
+        DbConnection connection,
+        string sql,
+        Action<DbDataReader> onRow,
+        CancellationToken cancellationToken)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = sql;
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            onRow(reader);
+        }
+    }
 }

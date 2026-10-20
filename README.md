@@ -7,8 +7,9 @@ NuGet library for **migration safety** on **Microsoft SQL Server**: in integrati
 ## Why use this package?
 
 - **Greenfield or long histories:** Whether you have two migrations or fifty, you can **loop the full chain** (or a subset) and see which steps break on realistic dirty data.
-- **Deterministic scenarios:** **unique indexes / primary keys**, **foreign keys**, **nullable → required**, **max-length shrink**, **NOT NULL column without default**, **column type conversion**, **decimal precision overflow**, and **check constraint** guidance (check rows are not auto-generated).
-- **Honest limits:** Operations come from **`MigrationBuilder` fluency only**—`migrationBuilder.Sql(...)` is **flagged**, not parsed (false negatives possible). Introspection targets **`dbo`** user tables.
+- **Deterministic scenarios:** **unique indexes / primary keys**, **foreign keys**, **nullable → required**, **max-length shrink**, **NOT NULL column without default**, **type conversions that can fail** (string → number/GUID/date, numeric narrowing such as `int` → `smallint`, `datetime2` → `datetime`), **decimal precision or scale changes that drop integer digits**, and **check constraint** guidance (check rows are not auto-generated).
+- **Data that is valid before the migration:** every seeded row satisfies the N−1 schema (foreign keys, unique keys, lengths), so a failure points at the migration, not at the seed.
+- **Honest limits:** Operations come from **`MigrationBuilder` fluency only**—`migrationBuilder.Sql(...)` is **flagged**, not parsed (false negatives possible). Introspection covers every user schema.
 
 ## Prerequisites
 
@@ -105,7 +106,7 @@ export MIGRATION_REPAIR_SQL_TEST='Server=localhost\SQLEXPRESS;Database=Migration
 
 At the **start** of each run the **`MigrationRepair_Test`** database is **dropped**; afterwards it stays as the last test left it, for inspection in SSMS.
 
-**Known issues.** `tests/MigrationRepair.Tests/KnownIssues/` holds tests for schemas the adversary gets wrong today (rowversion columns, GUID keys, non-`dbo` schemas, and more). Each asserts the behavior we want, so they fail and are marked `Explicit`; the default run skips them. Run them with:
+**Schema cases.** `tests/MigrationRepair.Tests/SchemaCases/` runs the adversary end to end over hand-written migrations for common schema shapes (rowversion columns, GUID keys, non-`dbo` schemas, required foreign keys, type narrowing, seed rows rejected by a CHECK constraint). When you find a schema the adversary gets wrong, add it there as a test of the behavior you want and mark it `Explicit` until it is fixed; the default run skips explicit tests. Run them with:
 
 ```bash
 dotnet test tests/MigrationRepair.Tests -- xUnit.Explicit=only
@@ -121,6 +122,8 @@ The test project holds several `DbContext` types, so pass `--context TestDbConte
 - **Not exhaustive “any data”**: deterministic scenarios only; not full property-based generation.
 - **SQL Server–only** implementation (provider alignment: test against the same engine as production migrations).
 - **First migration**: no N−1 tables; uses an empty schema model until **`Migrate(N)`** creates the database.
+- **Seeding**: one ordinary row per table, with bad values planted by single-row updates and row copies. When SQL Server rejects a seed statement (an existing CHECK constraint, a trigger, a column type with no generator, a required self-referencing foreign key), the affected scenarios are reported as skipped with **`Not seeded: <reason>`** and a warning is added; the run carries on. Filtered unique indexes and new CHECK constraints are not seeded.
+- **Silent data loss** (e.g. `datetime2` → `date`, scale reduction, `nvarchar` → `varchar`) does not fail a migration, so it is not reported.
 - **Custom `Up()` ordering** or data-fix steps can still yield **false negatives**.
 
 ## Local tooling

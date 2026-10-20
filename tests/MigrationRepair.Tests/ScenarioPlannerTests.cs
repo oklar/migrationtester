@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using MigrationRepair.Planning;
+using MigrationRepair.Schema;
 using Xunit;
 
 namespace MigrationRepair.Tests;
@@ -20,8 +21,8 @@ public sealed class ScenarioPlannerTests
             }
         ];
 
-        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
-        var scenarios = ScenarioPlanner.Plan(ops, tables);
+        var schema = TestSchema.WithTables("Items");
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
         Assert.Equal(AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint, s.Kind);
@@ -42,7 +43,7 @@ public sealed class ScenarioPlannerTests
             }
         ];
 
-        var scenarios = ScenarioPlanner.Plan(ops, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        var scenarios = ScenarioPlanner.Plan(ops, TestSchema.WithTables());
         var s = Assert.Single(scenarios);
         Assert.True(s.Skipped);
     }
@@ -62,8 +63,8 @@ public sealed class ScenarioPlannerTests
             }
         ];
 
-        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Orders", "Customers" };
-        var scenarios = ScenarioPlanner.Plan(ops, tables);
+        var schema = TestSchema.WithTables("Orders", "Customers");
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
         Assert.Equal(AdversaryScenarioKind.ForeignKeyOrphan, s.Kind);
@@ -87,8 +88,8 @@ public sealed class ScenarioPlannerTests
             }
         ];
 
-        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Customers" };
-        var scenarios = ScenarioPlanner.Plan(ops, tables);
+        var schema = TestSchema.WithTables("Customers");
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
         Assert.True(s.Skipped);
@@ -106,8 +107,8 @@ public sealed class ScenarioPlannerTests
         alter.OldColumn.IsNullable = true;
 
         var ops = (IReadOnlyList<MigrationOperation>)[alter];
-        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
-        var scenarios = ScenarioPlanner.Plan(ops, tables);
+        var schema = TestSchema.WithTables("Items");
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
         Assert.Equal(AdversaryScenarioKind.NonNullableColumnWithNull, s.Kind);
@@ -127,8 +128,8 @@ public sealed class ScenarioPlannerTests
         alter.OldColumn.MaxLength = 200;
 
         var ops = (IReadOnlyList<MigrationOperation>)[alter];
-        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
-        var scenarios = ScenarioPlanner.Plan(ops, tables);
+        var schema = TestSchema.WithTables("Items");
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
         Assert.Equal(AdversaryScenarioKind.MaxLengthExceededAfterShrink, s.Kind);
@@ -150,8 +151,8 @@ public sealed class ScenarioPlannerTests
         alter.OldColumn.MaxLength = 200;
 
         var ops = (IReadOnlyList<MigrationOperation>)[alter];
-        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
-        var scenarios = ScenarioPlanner.Plan(ops, tables);
+        var schema = TestSchema.WithTables("Items");
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         Assert.Equal(2, scenarios.Count);
         Assert.Contains(scenarios, s => s.Kind == AdversaryScenarioKind.NonNullableColumnWithNull);
@@ -171,8 +172,8 @@ public sealed class ScenarioPlannerTests
             }
         ];
 
-        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
-        var scenarios = ScenarioPlanner.Plan(ops, tables);
+        var schema = TestSchema.WithTables("Items");
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
         Assert.Equal(AdversaryScenarioKind.CheckConstraintViolation, s.Kind);
@@ -194,8 +195,8 @@ public sealed class ScenarioPlannerTests
             }
         ];
 
-        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
-        var scenarios = ScenarioPlanner.Plan(ops, tables);
+        var schema = TestSchema.WithTables("Items");
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         Assert.Empty(scenarios);
     }
@@ -216,8 +217,8 @@ public sealed class ScenarioPlannerTests
             }
         ];
 
-        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
-        var scenarios = ScenarioPlanner.Plan(ops, tables);
+        var schema = TestSchema.WithTables("Items");
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
         Assert.Equal(AdversaryScenarioKind.NotNullColumnAddedWithoutDefault, s.Kind);
@@ -240,8 +241,8 @@ public sealed class ScenarioPlannerTests
             }
         ];
 
-        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
-        var scenarios = ScenarioPlanner.Plan(ops, tables);
+        var schema = TestSchema.WithTables("Items");
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         Assert.Empty(scenarios);
     }
@@ -260,8 +261,8 @@ public sealed class ScenarioPlannerTests
             }
         ];
 
-        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
-        var scenarios = ScenarioPlanner.Plan(ops, tables);
+        var schema = TestSchema.WithTables("Items");
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         Assert.Empty(scenarios);
     }
@@ -278,8 +279,8 @@ public sealed class ScenarioPlannerTests
         alter.OldColumn.ColumnType = "nvarchar(100)";
 
         var ops = (IReadOnlyList<MigrationOperation>)[alter];
-        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
-        var scenarios = ScenarioPlanner.Plan(ops, tables);
+        var schema = TestSchema.WithTables("Items");
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
         Assert.Equal(AdversaryScenarioKind.ColumnTypeConversionIncompatible, s.Kind);
@@ -302,8 +303,8 @@ public sealed class ScenarioPlannerTests
         alter.OldColumn.IsNullable = true;
 
         var ops = (IReadOnlyList<MigrationOperation>)[alter];
-        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
-        var scenarios = ScenarioPlanner.Plan(ops, tables);
+        var schema = TestSchema.WithTables("Items");
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         Assert.DoesNotContain(scenarios, s => s.Kind == AdversaryScenarioKind.ColumnTypeConversionIncompatible);
     }
@@ -324,8 +325,8 @@ public sealed class ScenarioPlannerTests
         alter.OldColumn.Scale = 6;
 
         var ops = (IReadOnlyList<MigrationOperation>)[alter];
-        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
-        var scenarios = ScenarioPlanner.Plan(ops, tables);
+        var schema = TestSchema.WithTables("Items");
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
         Assert.Equal(AdversaryScenarioKind.DecimalPrecisionOverflow, s.Kind);
@@ -351,8 +352,8 @@ public sealed class ScenarioPlannerTests
         alter.OldColumn.Scale = 2;
 
         var ops = (IReadOnlyList<MigrationOperation>)[alter];
-        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
-        var scenarios = ScenarioPlanner.Plan(ops, tables);
+        var schema = TestSchema.WithTables("Items");
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         Assert.Empty(scenarios);
     }
@@ -370,8 +371,8 @@ public sealed class ScenarioPlannerTests
             }
         ];
 
-        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
-        var scenarios = ScenarioPlanner.Plan(ops, tables);
+        var schema = TestSchema.WithTables("Items");
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
         Assert.Equal(AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint, s.Kind);
@@ -392,10 +393,141 @@ public sealed class ScenarioPlannerTests
             }
         ];
 
-        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var scenarios = ScenarioPlanner.Plan(ops, tables);
+        var schema = TestSchema.WithTables();
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
         Assert.True(s.Skipped);
+    }
+
+    [Fact]
+    public void Plan_resolves_table_in_the_operation_schema()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new CreateIndexOperation { Name = "IX_Items_Code", Schema = "app", Table = "Items", Columns = ["Code"], IsUnique = true }
+        ];
+
+        var schema = TestSchema.Of(new TableMetadata
+        {
+            Name = new TableName("app", "Items"),
+            Columns = [TestSchema.Col("Code", "nvarchar(50)")]
+        });
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
+
+        var s = Assert.Single(scenarios);
+        Assert.False(s.Skipped, s.SkipReason);
+        Assert.Equal("app", s.Schema);
+    }
+
+    [Fact]
+    public void Plan_unqualified_operation_does_not_match_table_in_other_schema()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new CreateIndexOperation { Name = "IX_Items_Code", Table = "Items", Columns = ["Code"], IsUnique = true }
+        ];
+
+        var schema = TestSchema.Of(new TableMetadata { Name = new TableName("app", "Items"), Columns = [] });
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
+
+        Assert.True(Assert.Single(scenarios).Skipped);
+    }
+
+    [Fact]
+    public void Plan_unique_index_skipped_when_existing_unique_key_already_covers_columns()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new CreateIndexOperation { Name = "IX_Items_Id_Code", Table = "Items", Columns = ["Id", "Code"], IsUnique = true }
+        ];
+
+        var items = TestSchema.Table("Items", TestSchema.Col("Id", "int", identity: true), TestSchema.Col("Code", "nvarchar(50)"));
+        var schema = TestSchema.Of(new TableMetadata
+        {
+            Name = items.Name,
+            Columns = items.Columns,
+            UniqueKeys = [TestSchema.PrimaryKey("Id")]
+        });
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
+
+        var s = Assert.Single(scenarios);
+        Assert.True(s.Skipped);
+        Assert.Contains("already prevents duplicates", s.SkipReason);
+    }
+
+    [Theory]
+    [InlineData("int", "smallint", "32768")]
+    [InlineData("bigint", "int", "2147483648")]
+    [InlineData("int", "decimal(5,2)", "1000")]
+    public void Plan_numeric_narrowing_produces_type_conversion_with_overflowing_value(string oldType, string newType, string seed)
+    {
+        var alter = new AlterColumnOperation { Name = "Qty", Table = "Items", ColumnType = newType };
+        alter.OldColumn.ColumnType = oldType;
+
+        var scenarios = ScenarioPlanner.Plan([alter], TestSchema.WithTables("Items"));
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(AdversaryScenarioKind.ColumnTypeConversionIncompatible, s.Kind);
+        Assert.Equal(seed, s.SeedValue);
+    }
+
+    [Fact]
+    public void Plan_decimal_scale_increase_that_drops_integer_digits_produces_overflow_scenario()
+    {
+        var alter = new AlterColumnOperation { Name = "Amount", Table = "Items", ColumnType = "decimal(18,4)" };
+        alter.OldColumn.ColumnType = "decimal(18,2)";
+
+        var scenarios = ScenarioPlanner.Plan([alter], TestSchema.WithTables("Items"));
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(AdversaryScenarioKind.DecimalPrecisionOverflow, s.Kind);
+        Assert.Equal("100000000000000", s.SeedValue);
+    }
+
+    [Theory]
+    [InlineData("int", "bit")]
+    [InlineData("datetime2", "date")]
+    [InlineData("decimal(18,4)", "decimal(18,2)")]
+    [InlineData("nvarchar(100)", "varchar(100)")]
+    public void Plan_conversions_that_cannot_fail_produce_no_scenario(string oldType, string newType)
+    {
+        var alter = new AlterColumnOperation { Name = "Value", Table = "Items", ColumnType = newType };
+        alter.OldColumn.ColumnType = oldType;
+
+        var scenarios = ScenarioPlanner.Plan([alter], TestSchema.WithTables("Items"));
+
+        Assert.Empty(scenarios);
+    }
+
+    [Fact]
+    public void Plan_prefers_live_column_over_operation_old_column()
+    {
+        // The operation claims nvarchar(200), but the database column is nvarchar(30): nothing to shrink.
+        var alter = new AlterColumnOperation { Name = "Code", Table = "Items", ColumnType = "nvarchar(50)", MaxLength = 50 };
+        alter.OldColumn.ColumnType = "nvarchar(200)";
+        alter.OldColumn.MaxLength = 200;
+
+        var schema = TestSchema.Of(TestSchema.Table("Items", TestSchema.Col("Code", "nvarchar(30)")));
+        var scenarios = ScenarioPlanner.Plan([alter], schema);
+
+        Assert.Empty(scenarios);
+    }
+
+    [Fact]
+    public void Plan_add_identity_rowversion_or_computed_column_is_ignored()
+    {
+        var identity = new AddColumnOperation { Name = "Seq", Table = "Items", ClrType = typeof(int), IsNullable = false };
+        identity.AddAnnotation("SqlServer:Identity", "1, 1");
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            identity,
+            new AddColumnOperation { Name = "Version", Table = "Items", ClrType = typeof(byte[]), IsRowVersion = true },
+            new AddColumnOperation { Name = "Total", Table = "Items", ClrType = typeof(int), ComputedColumnSql = "[A] + [B]" }
+        ];
+
+        var scenarios = ScenarioPlanner.Plan(ops, TestSchema.WithTables("Items"));
+
+        Assert.Empty(scenarios);
     }
 }

@@ -133,6 +133,18 @@ public sealed class SchemaCaseTests
     }
 
     [Fact]
+    public async Task Seed_rows_do_not_take_ids_that_HasData_rows_use()
+    {
+        // The next identity would be 3 and the free integer key 2; a later migration inserts exactly those.
+        var step = await RunAsync<SeedDataContext>("20260101000002_AddMoreSeedRows", o => new(o));
+
+        Assert.True(step.Outcome == MigrationStepOutcome.Passed, step.Summary);
+        Assert.DoesNotContain(step.Warnings, w => w.StartsWith("No baseline row", StringComparison.Ordinal));
+        Assert.Contains(step.SqlExecuted, sql => sql.Contains("RESEED, 1000000", StringComparison.Ordinal));
+        Assert.Contains(step.SqlExecuted, sql => sql.StartsWith("INSERT INTO [dbo].[Countries] ([Id], [Name]) VALUES (1000001,", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Broken_earlier_migration_is_an_error_for_the_next_step_not_an_exception()
     {
         var report = await MigrationTestRunner.RunAllAsync(Options<BrokenFirstContext>(o => new(o)), Ct);

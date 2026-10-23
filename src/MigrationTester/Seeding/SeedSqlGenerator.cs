@@ -50,13 +50,16 @@ internal static class SeedSqlGenerator
             }
         }
 
+        var keyColumns = KeyColumns(table);
         var columns = new List<string>();
         var values = new List<string>();
         foreach (var c in table.Columns.Where(static c => c.IsInsertable))
         {
             string? value = fromPrincipal.GetValueOrDefault(c.Name)
                 ?? (c.IsNullable ? "NULL" : null)
-                ?? (c.HasDefault ? "" : SqlLiterals.Value(c.Type, ordinal: 1));
+                ?? (c.HasDefault
+                    ? ""
+                    : keyColumns.Contains(c.Name) ? SqlLiterals.KeyValue(c.Type, ordinal: 1) : SqlLiterals.Value(c.Type, ordinal: 1));
             if (value is null)
             {
                 return SeedSql.Fail($"no value can be generated for column '{c.Name}' of type {c.Type}");
@@ -81,6 +84,22 @@ internal static class SeedSqlGenerator
             ? SeedSql.Ok($"INSERT INTO {target} ({columnList}) VALUES ({string.Join(", ", values)});")
             : SeedSql.Ok(
                 $"INSERT INTO {target} ({columnList}) SELECT TOP (1) {string.Join(", ", values)} FROM {string.Join(" CROSS JOIN ", sources)};");
+    }
+
+    /// <summary>
+    /// Moves the table's identity counter up to <see cref="SqlLiterals.KeyOffset"/> (if it is lower), so seeded
+    /// rows get ids that HasData rows, existing or added by a later migration, do not use. Null without identity.
+    /// </summary>
+    public static string? ReseedIdentity(TableMetadata table)
+    {
+        if (table.Columns.FirstOrDefault(static c => c.IsIdentity) is not { } identity
+            || SqlLiterals.KeyOffset(identity.Type) is not long offset)
+        {
+            return null;
+        }
+
+        string name = SqlLiterals.NString(SqlDialect.Q(table.Name));
+        return $"IF IDENT_CURRENT({name}) < {offset} DBCC CHECKIDENT ({name}, RESEED, {offset}) WITH NO_INFOMSGS;";
     }
 
     public static string UpdateOneRow(TableMetadata table, IReadOnlyList<ColumnValue> assignments)
@@ -134,7 +153,7 @@ internal static class SeedSqlGenerator
             var values = new string[ordinals.Count];
             for (int i = 0; i < ordinals.Count; i++)
             {
-                if (SqlLiterals.Value(candidate.Type, ordinals[i]) is not { } value)
+                if (SqlLiterals.KeyValue(candidate.Type, ordinals[i]) is not { } value)
                 {
                     return SeedSql.Fail($"no value can be generated for column '{candidate.Name}' of type {candidate.Type}");
                 }
@@ -194,7 +213,7 @@ internal static class SeedSqlGenerator
 
             var fk = table.ForeignKeys.FirstOrDefault(f => f.Columns.Contains(column.Name, StringComparer.OrdinalIgnoreCase));
             string? value = fk is null
-                ? SqlLiterals.Value(column.Type, ordinal: 1)
+                ? SqlLiterals.KeyValue(column.Type, ordinal: 1)
                 : $"(SELECT TOP (1) {SqlDialect.Q(fk.PrincipalColumns[IndexOf(fk.Columns, column.Name)])} FROM {SqlDialect.Q(fk.PrincipalTable)})";
             if (value is null)
             {
@@ -207,6 +226,9 @@ internal static class SeedSqlGenerator
 
         return true;
     }
+
+    private static HashSet<string> KeyColumns(TableMetadata table)
+        => new(table.UniqueKeys.SelectMany(static k => k.Columns), StringComparer.OrdinalIgnoreCase);
 
     private static int IndexOf(IReadOnlyList<string> names, string name)
     {

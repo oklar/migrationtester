@@ -38,6 +38,28 @@ internal static class SqlLiterals
         };
     }
 
+    /// <summary>
+    /// A value for a primary or unique key column. Integers start high so they miss the small ids that
+    /// HasData seed rows use, both those already in the table and those a later migration inserts.
+    /// </summary>
+    public static string? KeyValue(SqlType type, int ordinal)
+        => KeyOffset(type) is long offset
+            ? (offset + ordinal).ToString(Invariant)
+            : Value(type, ordinal);
+
+    /// <summary>
+    /// Where to move an identity column's counter before seeding, for the same reason as
+    /// <see cref="KeyValue"/>; null for identity types it does not apply to.
+    /// </summary>
+    public static long? KeyOffset(SqlType type) => type.Name switch
+    {
+        "tinyint" => 100,
+        "smallint" => 30_000,
+        "int" or "bigint" => 1_000_000,
+        "decimal" or "numeric" when (type.Precision ?? 18) - (type.Scale ?? 0) >= 8 => 1_000_000,
+        _ => null
+    };
+
     /// <summary>A value no principal row holds: the type's maximum, or an out-of-pattern string.</summary>
     public static string? OrphanValue(SqlType type) => type.Name switch
     {

@@ -33,6 +33,12 @@ internal static class AdversarySeeder
         var noBaselineRow = new Dictionary<TableName, string>();
         foreach (var table in TableInsertOrder.Topological(schema.Tables))
         {
+            if (SeedSqlGenerator.ReseedIdentity(table) is { } reseed)
+            {
+                // Best effort: without it the seeded ids are merely more likely to meet HasData ids.
+                await TryExecuteAsync(connection, reseed, sqlLog, cancellationToken, expectRows: false).ConfigureAwait(false);
+            }
+
             var insert = SeedSqlGenerator.BaselineInsert(table);
             string? failure = insert.Succeeded
                 ? await TryExecuteAsync(connection, insert.Sql, sqlLog, cancellationToken).ConfigureAwait(false)
@@ -150,7 +156,8 @@ internal static class AdversarySeeder
         DbConnection connection,
         string sql,
         List<string> sqlLog,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool expectRows = true)
     {
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = sql;
@@ -160,7 +167,7 @@ internal static class AdversarySeeder
             sqlLog.Add(sql);
 
             // -1 means row counts are off (SET NOCOUNT ON); only a reported 0 is a failure.
-            return affected == 0 ? "the statement affected no rows (a referenced table may be empty)" : null;
+            return expectRows && affected == 0 ? "the statement affected no rows (a referenced table may be empty)" : null;
         }
         catch (DbException ex)
         {

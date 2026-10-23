@@ -328,6 +328,63 @@ public sealed class AddUniqueUserProfile : Migration
         migrationBuilder.CreateIndex("IX_Users_ProfileId", "Users", "ProfileId", unique: true, filter: "[ProfileId] IS NOT NULL");
 }
 
+public sealed class SeedDataContext(DbContextOptions<SeedDataContext> options) : DbContext(options);
+
+// HasData-style lookup rows. Raw SQL stands in for InsertData, which needs a model to know Statuses.Id is an identity.
+[DbContext(typeof(SeedDataContext))]
+[Migration("20260101000001_CreateLookupsWithSeedRows")]
+public sealed class CreateLookupsWithSeedRows : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.CreateTable(
+            name: "Statuses",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                Name = table.Column<string>("nvarchar(50)", maxLength: 50, nullable: false)
+            },
+            constraints: table => table.PrimaryKey("PK_Statuses", x => x.Id));
+        migrationBuilder.CreateTable(
+            name: "Countries",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false),
+                Name = table.Column<string>("nvarchar(50)", maxLength: 50, nullable: false)
+            },
+            constraints: table => table.PrimaryKey("PK_Countries", x => x.Id));
+        migrationBuilder.CreateTable(
+            name: "Shipments",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                StatusId = table.Column<int>("int", nullable: false),
+                CountryId = table.Column<int>("int", nullable: false)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_Shipments", x => x.Id);
+                table.ForeignKey("FK_Shipments_Statuses_StatusId", x => x.StatusId, "Statuses", "Id");
+                table.ForeignKey("FK_Shipments_Countries_CountryId", x => x.CountryId, "Countries", "Id");
+            });
+        migrationBuilder.Sql(
+            "SET IDENTITY_INSERT [Statuses] ON; INSERT INTO [Statuses] ([Id], [Name]) VALUES (1, N'Open'), (2, N'Closed'); SET IDENTITY_INSERT [Statuses] OFF;");
+        migrationBuilder.Sql("INSERT INTO [Countries] ([Id], [Name]) VALUES (1, N'Norway');");
+    }
+}
+
+[DbContext(typeof(SeedDataContext))]
+[Migration("20260101000002_AddMoreSeedRows")]
+public sealed class AddMoreSeedRows : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.Sql(
+            "SET IDENTITY_INSERT [Statuses] ON; INSERT INTO [Statuses] ([Id], [Name]) VALUES (3, N'Archived'); SET IDENTITY_INSERT [Statuses] OFF;");
+        migrationBuilder.Sql("INSERT INTO [Countries] ([Id], [Name]) VALUES (2, N'Sweden');");
+    }
+}
+
 public sealed class BrokenFirstContext(DbContextOptions<BrokenFirstContext> options) : DbContext(options);
 
 [DbContext(typeof(BrokenFirstContext))]

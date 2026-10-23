@@ -1,4 +1,4 @@
-# MigrationRepair
+# MigrationTester
 
 NuGet library for **migration safety** on **Microsoft SQL Server**: in integration tests, stress each EF Core migration with **schema-aware “bad” data** so you find data-dependent `Up()` failures **before production**. The library migrates to **N−1**, seeds **baseline + adversarial** rows derived from migration **N**’s fluent `Up()` operations, then runs **`Migrate` to N**. Failures include **T-SQL repair hints** (`RepairHintCatalog`).
 
@@ -59,7 +59,7 @@ docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=Your_password1" -p 1433:1433
 ```
 
 ```csharp
-const string DockerSa = "Server=127.0.0.1,1433;User Id=sa;Password=Your_password1;TrustServerCertificate=True;Database=MigrationRepair_Test";
+const string DockerSa = "Server=127.0.0.1,1433;User Id=sa;Password=Your_password1;TrustServerCertificate=True;Database=MigrationTester_Test";
 
 var batch = new MigrationAdversaryBatchOptions
 {
@@ -87,29 +87,29 @@ Use **Windows auth** on dev (`Integrated Security=True`) when you prefer SSMS-st
 
 | Path | Contents |
 |------|----------|
-| `src/MigrationRepair/` | The library (the only packable project) |
-| `tests/MigrationRepair.Tests/` | Unit and SQL Server integration tests (xUnit.net v3) |
-| `examples/MigrationRepair.Examples/` | Consumer sample; see its [README](examples/MigrationRepair.Examples/README.md) |
+| `src/MigrationTester/` | The library (the only packable project) |
+| `tests/MigrationTester.Tests/` | Unit and SQL Server integration tests (xUnit.net v3) |
+| `examples/MigrationTester.Examples/` | Consumer sample; see its [README](examples/MigrationTester.Examples/README.md) |
 
 Shared build settings live in `Directory.Build.props`, package versions in `Directory.Packages.props`. Warnings, including NuGet vulnerability warnings, fail the build.
 
 ```bash
-dotnet build MigrationRepair.slnx
-dotnet test MigrationRepair.slnx
+dotnet build MigrationTester.slnx
+dotnet test MigrationTester.slnx
 ```
 
-Integration tests need SQL Server. The defaults in **`TestSqlServerConfig`** use Windows auth against the default local instance; override them with **`MIGRATION_REPAIR_SQL_TEST`** (tests) and **`MIGRATION_REPAIR_SQL_DESIGN`** (`dotnet ef`). For a SQL Express named instance, for example:
+Integration tests need SQL Server. The defaults in **`TestSqlServerConfig`** use Windows auth against the default local instance; override them with **`MIGRATION_TESTER_SQL_TEST`** (tests) and **`MIGRATION_TESTER_SQL_DESIGN`** (`dotnet ef`). For a SQL Express named instance, for example:
 
 ```bash
-export MIGRATION_REPAIR_SQL_TEST='Server=localhost\SQLEXPRESS;Database=MigrationRepair_Test;Integrated Security=True;TrustServerCertificate=True'
+export MIGRATION_TESTER_SQL_TEST='Server=localhost\SQLEXPRESS;Database=MigrationTester_Test;Integrated Security=True;TrustServerCertificate=True'
 ```
 
-At the **start** of each run the **`MigrationRepair_Test`** database is **dropped**; afterwards it stays as the last test left it, for inspection in SSMS.
+At the **start** of each run the **`MigrationTester_Test`** database is **dropped**; afterwards it stays as the last test left it, for inspection in SSMS.
 
-**Schema cases.** `tests/MigrationRepair.Tests/SchemaCases/` runs the adversary end to end over hand-written migrations for common schema shapes (rowversion columns, GUID keys, non-`dbo` schemas, required foreign keys, filtered unique indexes, type narrowing, seed rows rejected by a CHECK constraint). When you find a schema the adversary gets wrong, add it there as a test of the behavior you want and mark it `Explicit` until it is fixed; the default run skips explicit tests. Run them with:
+**Schema cases.** `tests/MigrationTester.Tests/SchemaCases/` runs the adversary end to end over hand-written migrations for common schema shapes (rowversion columns, GUID keys, non-`dbo` schemas, required foreign keys, filtered unique indexes, type narrowing, seed rows rejected by a CHECK constraint). When you find a schema the adversary gets wrong, add it there as a test of the behavior you want and mark it `Explicit` until it is fixed; the default run skips explicit tests. Run them with:
 
 ```bash
-dotnet test tests/MigrationRepair.Tests -- xUnit.Explicit=only
+dotnet test tests/MigrationTester.Tests -- xUnit.Explicit=only
 ```
 
 The test project holds several `DbContext` types, so pass `--context TestDbContext` to `dotnet ef`.

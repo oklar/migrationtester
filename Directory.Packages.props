@@ -21,9 +21,9 @@
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
   </ItemGroup>
 
-  <!-- Examples built against the packed nupkg: -p:UseMigrationRepairPackage=true -->
+  <!-- Examples built against the packed nupkg: -p:UseMigrationTesterPackage=true -->
   <ItemGroup>
-    <PackageVersion Include="MigrationRepair" Version="$(VersionPrefix)" />
+    <PackageVersion Include="MigrationTester" Version="$(VersionPrefix)" />
   </ItemGroup>
 
 </Project>

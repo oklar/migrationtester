@@ -1,0 +1,15 @@
+using Microsoft.EntityFrameworkCore;
+
+namespace MigrationTester.Runner;
+
+public sealed class MigrationAdversaryOptions
+{
+    /// <summary>Factory for a context configured with SQL Server (same as production migrations).</summary>
+    public required Func<DbContext> CreateContext { get; init; }
+
+    /// <summary>Full migration id (e.g. 20240101120000_MyMigration).</summary>
+    public required string TargetMigrationId { get; init; }
+
+    /// <summary>Override when capture must match a non-standard MigrationBuilder provider key.</summary>
+    public string? ActiveProvider { get; init; }
+}

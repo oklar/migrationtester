@@ -20,6 +20,7 @@ public sealed class MigrationTestReport
     /// <summary>True when every step <see cref="MigrationStepResult.Succeeded"/>.</summary>
     public bool Succeeded => Steps.All(static s => s.Succeeded);
 
+    /// <summary>The steps that did not <see cref="MigrationStepResult.Succeeded"/>.</summary>
     public IReadOnlyList<MigrationStepResult> FailedSteps => [.. Steps.Where(static s => !s.Succeeded)];
 
     /// <summary>Throws <see cref="MigrationTestException"/> with the full report unless <see cref="Succeeded"/>.</summary>

@@ -1,0 +1,127 @@
+#nullable enable
+MigrationTester.MigrationScenario
+MigrationTester.MigrationScenario.<Clone>$() -> MigrationTester.MigrationScenario!
+MigrationTester.MigrationScenario.Columns.get -> System.Collections.Generic.IReadOnlyList<string!>!
+MigrationTester.MigrationScenario.Columns.init -> void
+MigrationTester.MigrationScenario.Equals(MigrationTester.MigrationScenario? other) -> bool
+MigrationTester.MigrationScenario.Kind.get -> MigrationTester.ScenarioKind
+MigrationTester.MigrationScenario.Kind.init -> void
+MigrationTester.MigrationScenario.MigrationScenario() -> void
+MigrationTester.MigrationScenario.Name.get -> string!
+MigrationTester.MigrationScenario.Name.init -> void
+MigrationTester.MigrationScenario.NewColumnType.get -> string?
+MigrationTester.MigrationScenario.NewColumnType.init -> void
+MigrationTester.MigrationScenario.NewMaxLength.get -> int?
+MigrationTester.MigrationScenario.NewMaxLength.init -> void
+MigrationTester.MigrationScenario.NewPrecision.get -> int?
+MigrationTester.MigrationScenario.NewPrecision.init -> void
+MigrationTester.MigrationScenario.NewScale.get -> int?
+MigrationTester.MigrationScenario.NewScale.init -> void
+MigrationTester.MigrationScenario.OldColumnType.get -> string?
+MigrationTester.MigrationScenario.OldColumnType.init -> void
+MigrationTester.MigrationScenario.OldMaxLength.get -> int?
+MigrationTester.MigrationScenario.OldMaxLength.init -> void
+MigrationTester.MigrationScenario.OldPrecision.get -> int?
+MigrationTester.MigrationScenario.OldPrecision.init -> void
+MigrationTester.MigrationScenario.OldScale.get -> int?
+MigrationTester.MigrationScenario.OldScale.init -> void
+MigrationTester.MigrationScenario.PrincipalColumns.get -> System.Collections.Generic.IReadOnlyList<string!>?
+MigrationTester.MigrationScenario.PrincipalColumns.init -> void
+MigrationTester.MigrationScenario.PrincipalSchema.get -> string?
+MigrationTester.MigrationScenario.PrincipalSchema.init -> void
+MigrationTester.MigrationScenario.PrincipalTable.get -> string?
+MigrationTester.MigrationScenario.PrincipalTable.init -> void
+MigrationTester.MigrationScenario.Reason.get -> string?
+MigrationTester.MigrationScenario.Reason.init -> void
+MigrationTester.MigrationScenario.RepairHint.get -> string!
+MigrationTester.MigrationScenario.Schema.get -> string?
+MigrationTester.MigrationScenario.Schema.init -> void
+MigrationTester.MigrationScenario.SourceOperation.get -> Microsoft.EntityFrameworkCore.Migrations.Operations.MigrationOperation?
+MigrationTester.MigrationScenario.SourceOperation.init -> void
+MigrationTester.MigrationScenario.Status.get -> MigrationTester.ScenarioStatus
+MigrationTester.MigrationScenario.Status.init -> void
+MigrationTester.MigrationScenario.Table.get -> string!
+MigrationTester.MigrationScenario.Table.init -> void
+MigrationTester.MigrationStepOutcome
+MigrationTester.MigrationStepOutcome.Error = 2 -> MigrationTester.MigrationStepOutcome
+MigrationTester.MigrationStepOutcome.Failed = 1 -> MigrationTester.MigrationStepOutcome
+MigrationTester.MigrationStepOutcome.Passed = 0 -> MigrationTester.MigrationStepOutcome
+MigrationTester.MigrationStepResult
+MigrationTester.MigrationStepResult.ContainsRawSql.get -> bool
+MigrationTester.MigrationStepResult.ContainsRawSql.init -> void
+MigrationTester.MigrationStepResult.DatabaseName.get -> string!
+MigrationTester.MigrationStepResult.DatabaseName.init -> void
+MigrationTester.MigrationStepResult.Duration.get -> System.TimeSpan
+MigrationTester.MigrationStepResult.Duration.init -> void
+MigrationTester.MigrationStepResult.Exception.get -> System.Exception?
+MigrationTester.MigrationStepResult.Exception.init -> void
+MigrationTester.MigrationStepResult.FailingScenarios.get -> System.Collections.Generic.IReadOnlyList<MigrationTester.MigrationScenario!>!
+MigrationTester.MigrationStepResult.FailingScenarios.init -> void
+MigrationTester.MigrationStepResult.MigrationId.get -> string!
+MigrationTester.MigrationStepResult.MigrationId.init -> void
+MigrationTester.MigrationStepResult.MigrationStepResult() -> void
+MigrationTester.MigrationStepResult.Outcome.get -> MigrationTester.MigrationStepOutcome
+MigrationTester.MigrationStepResult.Outcome.init -> void
+MigrationTester.MigrationStepResult.Scenarios.get -> System.Collections.Generic.IReadOnlyList<MigrationTester.MigrationScenario!>!
+MigrationTester.MigrationStepResult.Scenarios.init -> void
+MigrationTester.MigrationStepResult.SqlExecuted.get -> System.Collections.Generic.IReadOnlyList<string!>!
+MigrationTester.MigrationStepResult.SqlExecuted.init -> void
+MigrationTester.MigrationStepResult.Succeeded.get -> bool
+MigrationTester.MigrationStepResult.Summary.get -> string!
+MigrationTester.MigrationStepResult.ThrowIfFailed() -> void
+MigrationTester.MigrationStepResult.Warnings.get -> System.Collections.Generic.IReadOnlyList<string!>!
+MigrationTester.MigrationStepResult.Warnings.init -> void
+MigrationTester.MigrationTestException
+MigrationTester.MigrationTestException.FailedSteps.get -> System.Collections.Generic.IReadOnlyList<MigrationTester.MigrationStepResult!>!
+MigrationTester.MigrationTestOptions
+MigrationTester.MigrationTestOptions.CreateContext.get -> System.Func<Microsoft.EntityFrameworkCore.DbContext!>!
+MigrationTester.MigrationTestOptions.CreateContext.init -> void
+MigrationTester.MigrationTestOptions.DatabaseName.get -> string?
+MigrationTester.MigrationTestOptions.DatabaseName.init -> void
+MigrationTester.MigrationTestOptions.KeepDatabase.get -> bool
+MigrationTester.MigrationTestOptions.KeepDatabase.init -> void
+MigrationTester.MigrationTestOptions.MigrationIds.get -> System.Collections.Generic.IReadOnlyList<string!>?
+MigrationTester.MigrationTestOptions.MigrationIds.init -> void
+MigrationTester.MigrationTestOptions.MigrationTestOptions() -> void
+MigrationTester.MigrationTestOptions.RebuildDatabaseForEachMigration.get -> bool
+MigrationTester.MigrationTestOptions.RebuildDatabaseForEachMigration.init -> void
+MigrationTester.MigrationTestOptions.RequireAllScenariosSeeded.get -> bool
+MigrationTester.MigrationTestOptions.RequireAllScenariosSeeded.init -> void
+MigrationTester.MigrationTestReport
+MigrationTester.MigrationTestReport.DatabaseKept.get -> bool
+MigrationTester.MigrationTestReport.DatabaseKept.init -> void
+MigrationTester.MigrationTestReport.DatabaseName.get -> string!
+MigrationTester.MigrationTestReport.DatabaseName.init -> void
+MigrationTester.MigrationTestReport.FailedSteps.get -> System.Collections.Generic.IReadOnlyList<MigrationTester.MigrationStepResult!>!
+MigrationTester.MigrationTestReport.MigrationTestReport() -> void
+MigrationTester.MigrationTestReport.Steps.get -> System.Collections.Generic.IReadOnlyList<MigrationTester.MigrationStepResult!>!
+MigrationTester.MigrationTestReport.Steps.init -> void
+MigrationTester.MigrationTestReport.Succeeded.get -> bool
+MigrationTester.MigrationTestReport.ThrowIfFailed() -> void
+MigrationTester.MigrationTestReport.Warnings.get -> System.Collections.Generic.IReadOnlyList<string!>!
+MigrationTester.MigrationTestReport.Warnings.init -> void
+MigrationTester.MigrationTestRunner
+MigrationTester.ScenarioKind
+MigrationTester.ScenarioKind.CheckConstraintViolation = 4 -> MigrationTester.ScenarioKind
+MigrationTester.ScenarioKind.ColumnTypeConversionIncompatible = 6 -> MigrationTester.ScenarioKind
+MigrationTester.ScenarioKind.DecimalPrecisionOverflow = 7 -> MigrationTester.ScenarioKind
+MigrationTester.ScenarioKind.DuplicateUniqueIndexOrConstraint = 0 -> MigrationTester.ScenarioKind
+MigrationTester.ScenarioKind.ForeignKeyOrphan = 1 -> MigrationTester.ScenarioKind
+MigrationTester.ScenarioKind.MaxLengthExceededAfterShrink = 3 -> MigrationTester.ScenarioKind
+MigrationTester.ScenarioKind.NonNullableColumnWithNull = 2 -> MigrationTester.ScenarioKind
+MigrationTester.ScenarioKind.NotNullColumnAddedWithoutDefault = 5 -> MigrationTester.ScenarioKind
+MigrationTester.ScenarioStatus
+MigrationTester.ScenarioStatus.NotApplicable = 1 -> MigrationTester.ScenarioStatus
+MigrationTester.ScenarioStatus.NotSeeded = 2 -> MigrationTester.ScenarioStatus
+MigrationTester.ScenarioStatus.Planted = 0 -> MigrationTester.ScenarioStatus
+override MigrationTester.MigrationScenario.Equals(object? obj) -> bool
+override MigrationTester.MigrationScenario.GetHashCode() -> int
+override MigrationTester.MigrationScenario.ToString() -> string!
+override MigrationTester.MigrationStepResult.ToString() -> string!
+override MigrationTester.MigrationTestReport.ToString() -> string!
+static MigrationTester.MigrationScenario.operator !=(MigrationTester.MigrationScenario? left, MigrationTester.MigrationScenario? right) -> bool
+static MigrationTester.MigrationScenario.operator ==(MigrationTester.MigrationScenario? left, MigrationTester.MigrationScenario? right) -> bool
+static MigrationTester.MigrationTestRunner.GetMigrationIds(System.Func<Microsoft.EntityFrameworkCore.DbContext!>! createContext) -> System.Collections.Generic.IReadOnlyList<string!>!
+static MigrationTester.MigrationTestRunner.RunAllAsync(MigrationTester.MigrationTestOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<MigrationTester.MigrationTestReport!>!
+static MigrationTester.MigrationTestRunner.RunAsync(MigrationTester.MigrationTestOptions! options, string! migrationId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<MigrationTester.MigrationStepResult!>!
+static MigrationTester.MigrationTestRunner.RunRangeAsync(MigrationTester.MigrationTestOptions! options, string! fromMigrationId, string! toMigrationId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<MigrationTester.MigrationTestReport!>!

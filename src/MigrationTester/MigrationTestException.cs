@@ -9,5 +9,6 @@ public sealed class MigrationTestException : Exception
         FailedSteps = failedSteps;
     }
 
+    /// <summary>The steps that did not succeed.</summary>
     public IReadOnlyList<MigrationStepResult> FailedSteps { get; }
 }

@@ -1,5 +1,6 @@
 namespace MigrationTester;
 
+/// <summary>How one migration fared on the planted data.</summary>
 public enum MigrationStepOutcome
 {
     /// <summary>The migration ran successfully on the planted data.</summary>

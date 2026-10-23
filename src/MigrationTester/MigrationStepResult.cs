@@ -8,6 +8,7 @@ public sealed class MigrationStepResult
     /// <summary>EF migration id (e.g. 20240101120000_MyMigration).</summary>
     public required string MigrationId { get; init; }
 
+    /// <summary>Whether the migration passed, failed on the planted data, or could not be tested.</summary>
     public required MigrationStepOutcome Outcome { get; init; }
 
     /// <summary>The migration's error (<see cref="MigrationStepOutcome.Failed"/>) or the setup error (<see cref="MigrationStepOutcome.Error"/>).</summary>
@@ -22,6 +23,7 @@ public sealed class MigrationStepResult
     /// </summary>
     public IReadOnlyList<MigrationScenario> FailingScenarios { get; init; } = [];
 
+    /// <summary>Things that limit what the step tested, e.g. <c>migrationBuilder.Sql(...)</c> or a table that got no seed row.</summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];
 
     /// <summary>Seed statements that ran before the migration, in order.</summary>
@@ -61,5 +63,6 @@ public sealed class MigrationStepResult
         }
     }
 
+    /// <summary>Same as <see cref="Summary"/>.</summary>
     public override string ToString() => Summary;
 }

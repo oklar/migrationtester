@@ -9,6 +9,7 @@ namespace MigrationTester;
 /// </summary>
 public sealed record MigrationScenario
 {
+    /// <summary>What kind of data the migration may fail on.</summary>
     public required ScenarioKind Kind { get; init; }
 
     /// <summary>User-facing label for assertions and reports.</summary>
@@ -29,6 +30,7 @@ public sealed record MigrationScenario
     /// <summary>Principal table for FK scenarios.</summary>
     public string? PrincipalTable { get; init; }
 
+    /// <summary>Referenced principal columns for FK scenarios, in the order of <see cref="Columns"/>.</summary>
     public IReadOnlyList<string>? PrincipalColumns { get; init; }
 
     /// <summary>For length reduction: old max length (null = max/unlimited for strings).</summary>
@@ -58,6 +60,7 @@ public sealed record MigrationScenario
     /// <summary>The migration operation the scenario comes from.</summary>
     public MigrationOperation? SourceOperation { get; init; }
 
+    /// <summary>Whether the data was planted before the migration ran.</summary>
     public ScenarioStatus Status { get; init; } = ScenarioStatus.Planted;
 
     /// <summary>Why the data was not planted; null when <see cref="Status"/> is <see cref="ScenarioStatus.Planted"/>.</summary>

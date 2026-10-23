@@ -83,6 +83,25 @@ public sealed class MigrationTestRunnerRunAllTests
     }
 
     [Fact]
+    public async Task KeepDatabase_keeps_the_planted_data_of_the_last_step()
+    {
+        var report = await MigrationTestRunner.RunAllAsync(Options(keepDatabase: true, migrationIds: ["AddUniqueCode"]), Ct);
+        try
+        {
+            Assert.Equal(MigrationStepOutcome.Failed, Assert.Single(report.Steps).Outcome);
+
+            // The unique index was rolled back, so the planted duplicates are still there to look at.
+            int duplicates = await TestSqlServerConfig.ScalarAsync<int>(
+                report.DatabaseName, "SELECT COUNT(*) FROM [Items] GROUP BY [Code] HAVING COUNT(*) > 1;", Ct);
+            Assert.True(duplicates >= 2);
+        }
+        finally
+        {
+            await TestSqlServerConfig.DropDatabaseAsync(report.DatabaseName, Ct);
+        }
+    }
+
+    [Fact]
     public async Task DatabaseName_uses_that_database()
     {
         string name = TestSqlServerConfig.TestDatabaseName;

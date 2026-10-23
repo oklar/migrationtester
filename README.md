@@ -61,12 +61,15 @@ public async Task Migration_handles_existing_data(string migrationId)
 
 ## The test database
 
-The runner drops and recreates its database for every migration, so by default it never touches the database in your connection string. Each run creates a throwaway database named after it (`MyApp_mt_1a2b3c4d`) and drops it when the run ends. The connection string only needs a server and a login that can create and drop databases.
+By default the runner never touches the database in your connection string. Each run creates a throwaway database named after it (`MyApp_mt_1a2b3c4d`) and drops it when the run ends. The connection string only needs a server and a login that can create and drop databases.
+
+A run migrates that database forward once. For each migration it plants the data and runs the migration inside a transaction that is rolled back, then applies the migration to the clean database for the next step. That is about two migration runs per migration, with the same starting state as rebuilding from empty every time; on the sample's 9 migrations it takes 0.65 s instead of 5 s. Migrations with statements that cannot run in a transaction (`Sql(..., suppressTransaction: true)`, `ALTER DATABASE`) are planted and run for real, and the database is rebuilt afterwards.
 
 | Option | Effect |
 |---|---|
 | `DatabaseName` | Use this exact database instead of a throwaway one, e.g. on a server where creating databases is slow. It is dropped and recreated, so only name a database you are happy to lose. |
-| `KeepDatabase` | Leave the database in place after the run to inspect the last migration's data; `report.DatabaseName` tells you which one. |
+| `KeepDatabase` | Leave the database in place after the run, holding the last migration's planted data and result; `report.DatabaseName` tells you which one. |
+| `RebuildDatabaseForEachMigration` | Recreate the database from empty and plant data for real for every migration. Slower; for when you suspect the transactional run behaves differently. |
 
 ## Reading the results
 
@@ -105,7 +108,7 @@ Then use `Server=127.0.0.1,1433;User Id=sa;Password=Your_password1;TrustServerCe
 - **Deterministic cases, not random data.** A migration can still fail on data nobody thought of.
 - **Seeding** inserts one ordinary row per table and derives the bad rows from it. When SQL Server rejects a seed statement (an existing CHECK constraint, a trigger, a column type with no generator, a required self-referencing foreign key), those cases become `NotSeeded` with the reason, and the run carries on. Filtered unique indexes are seeded only when the filter is `IS NOT NULL` terms; new CHECK constraints are never seeded.
 - **Silent data loss** (e.g. `datetime2` → `date`, scale reduction, `nvarchar` → `varchar`) does not fail a migration, so it is not reported.
-- Every migration is tested from an empty database, so a long history means many migration runs.
+- **Seed values avoid HasData ids** by starting identity counters and integer keys at 1,000,000 (30,000 for `smallint`, 100 for `tinyint`). Seed data with ids above that can still collide.
 
 ## Working on this repo
 

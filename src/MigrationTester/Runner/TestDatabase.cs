@@ -21,6 +21,12 @@ internal sealed class TestDatabase
 
     public string Name { get; }
 
+    /// <summary>
+    /// The migration the database is at with only the data migrations themselves inserted, or null when it
+    /// does not exist, holds planted data, or is in an unknown state.
+    /// </summary>
+    public string? CleanAt { get; set; }
+
     public static TestDatabase For(DbContext context, string? databaseName)
     {
         string connectionString = context.Database.GetConnectionString()

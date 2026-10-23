@@ -25,8 +25,21 @@ public sealed class MigrationTestOptions
     /// </summary>
     public string? DatabaseName { get; init; }
 
-    /// <summary>Leave the test database in place after the run, to inspect the last migration's data.</summary>
+    /// <summary>
+    /// Leave the test database in place after the run, holding the last migration's planted data and result.
+    /// </summary>
     public bool KeepDatabase { get; init; }
+
+    /// <summary>
+    /// Recreate the database from empty for every migration and plant data for real, as earlier versions did.
+    /// <para>
+    /// By default each migration instead runs on its planted data inside a transaction that is rolled back,
+    /// and is then applied to the clean database for the next migration: about two migration runs per
+    /// migration instead of a full rebuild each time, with the same starting state. Migrations with statements
+    /// that cannot run in a transaction use the rebuild path automatically.
+    /// </para>
+    /// </summary>
+    public bool RebuildDatabaseForEachMigration { get; init; }
 
     /// <summary>
     /// Count a migration as failed when some of its scenarios could not be planted

@@ -145,13 +145,25 @@ public sealed class SchemaCaseTests
     }
 
     [Fact]
+    public async Task Statement_outside_a_transaction_plants_for_real_and_the_next_step_starts_clean()
+    {
+        var report = await MigrationTestRunner.RunAllAsync(Options<OwnTransactionContext>(o => new(o)), Ct);
+
+        Assert.Equal(
+            [MigrationStepOutcome.Passed, MigrationStepOutcome.Failed, MigrationStepOutcome.Failed],
+            report.Steps.Select(static s => s.Outcome));
+        AssertBrokenBy(report.Steps[1], ScenarioKind.NonNullableColumnWithNull);
+        AssertBrokenBy(report.Steps[2], ScenarioKind.DuplicateUniqueIndexOrConstraint);
+    }
+
+    [Fact]
     public async Task Broken_earlier_migration_is_an_error_for_the_next_step_not_an_exception()
     {
         var report = await MigrationTestRunner.RunAllAsync(Options<BrokenFirstContext>(o => new(o)), Ct);
 
         Assert.Equal([MigrationStepOutcome.Failed, MigrationStepOutcome.Error], report.Steps.Select(static s => s.Outcome));
         Assert.Contains("No scenarios were planted", report.Steps[0].Summary, StringComparison.Ordinal);
-        Assert.Contains("Migrating an empty database to the previous migration", report.Steps[1].Summary, StringComparison.Ordinal);
+        Assert.Contains("Migrating the test database to the previous migration", report.Steps[1].Summary, StringComparison.Ordinal);
         Assert.Contains("SQL Server error 50000", report.Steps[1].Summary, StringComparison.Ordinal);
     }
 

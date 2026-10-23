@@ -25,7 +25,8 @@ internal static class AdversarySeeder
         DbConnection connection,
         RelationalSchemaModel schema,
         IReadOnlyList<MigrationScenario> scenarios,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DbTransaction? transaction = null)
     {
         var sqlLog = new List<string>();
         var warnings = new List<string>();
@@ -36,12 +37,12 @@ internal static class AdversarySeeder
             if (SeedSqlGenerator.ReseedIdentity(table) is { } reseed)
             {
                 // Best effort: without it the seeded ids are merely more likely to meet HasData ids.
-                await TryExecuteAsync(connection, reseed, sqlLog, cancellationToken, expectRows: false).ConfigureAwait(false);
+                await TryExecuteAsync(connection, transaction, reseed, sqlLog, cancellationToken, expectRows: false).ConfigureAwait(false);
             }
 
             var insert = SeedSqlGenerator.BaselineInsert(table);
             string? failure = insert.Succeeded
-                ? await TryExecuteAsync(connection, insert.Sql, sqlLog, cancellationToken).ConfigureAwait(false)
+                ? await TryExecuteAsync(connection, transaction, insert.Sql, sqlLog, cancellationToken).ConfigureAwait(false)
                 : insert.Failure;
             if (failure is not null)
             {
@@ -128,7 +129,7 @@ internal static class AdversarySeeder
                 return statement.Failure;
             }
 
-            string? executeFailure = await TryExecuteAsync(connection, statement.Sql, sqlLog, cancellationToken)
+            string? executeFailure = await TryExecuteAsync(connection, transaction, statement.Sql, sqlLog, cancellationToken)
                 .ConfigureAwait(false);
             if (executeFailure is null)
             {
@@ -154,6 +155,7 @@ internal static class AdversarySeeder
     /// <summary>Runs one statement; returns null on success, otherwise why it did not plant a row.</summary>
     private static async Task<string?> TryExecuteAsync(
         DbConnection connection,
+        DbTransaction? transaction,
         string sql,
         List<string> sqlLog,
         CancellationToken cancellationToken,
@@ -161,6 +163,7 @@ internal static class AdversarySeeder
     {
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = sql;
+        cmd.Transaction = transaction;
         try
         {
             int affected = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -172,6 +175,11 @@ internal static class AdversarySeeder
         catch (DbException ex)
         {
             return $"{ex.Message} [{sql}]";
+        }
+        catch (InvalidOperationException ex) when (transaction is not null && transaction.Connection is null)
+        {
+            // An earlier error made SQL Server roll the transaction back; the caller checks for this afterwards.
+            return ex.Message;
         }
     }
 }

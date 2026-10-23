@@ -57,9 +57,19 @@ public static class TestSqlServerConfig
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task<SqlConnection> OpenMasterAsync(CancellationToken cancellationToken)
+    public static async Task<T> ScalarAsync<T>(string database, string sql, CancellationToken cancellationToken)
     {
-        var builder = new SqlConnectionStringBuilder(TestRunConnectionString) { InitialCatalog = "master" };
+        await using var connection = await OpenAsync(database, cancellationToken);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = sql;
+        return (T)(await cmd.ExecuteScalarAsync(cancellationToken))!;
+    }
+
+    private static Task<SqlConnection> OpenMasterAsync(CancellationToken cancellationToken) => OpenAsync("master", cancellationToken);
+
+    private static async Task<SqlConnection> OpenAsync(string database, CancellationToken cancellationToken)
+    {
+        var builder = new SqlConnectionStringBuilder(TestRunConnectionString) { InitialCatalog = database };
         var connection = new SqlConnection(builder.ConnectionString);
         await connection.OpenAsync(cancellationToken);
         return connection;

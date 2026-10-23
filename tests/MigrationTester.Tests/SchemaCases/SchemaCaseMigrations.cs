@@ -385,6 +385,53 @@ public sealed class AddMoreSeedRows : Migration
     }
 }
 
+public sealed class OwnTransactionContext(DbContextOptions<OwnTransactionContext> options) : DbContext(options);
+
+[DbContext(typeof(OwnTransactionContext))]
+[Migration("20260101000001_CreateContacts")]
+public sealed class CreateContacts : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.CreateTable(
+            name: "Contacts",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                Phone = table.Column<string>("nvarchar(30)", maxLength: 30, nullable: true)
+            },
+            constraints: table => table.PrimaryKey("PK_Contacts", x => x.Id));
+}
+
+// A statement EF must run outside a transaction forces the plant-for-real path for this step.
+[DbContext(typeof(OwnTransactionContext))]
+[Migration("20260101000002_MakePhoneRequiredOutsideTransaction")]
+public sealed class MakePhoneRequiredOutsideTransaction : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.Sql("SELECT 1;", suppressTransaction: true);
+        migrationBuilder.AlterColumn<string>(
+            name: "Phone",
+            table: "Contacts",
+            type: "nvarchar(30)",
+            maxLength: 30,
+            nullable: false,
+            oldClrType: typeof(string),
+            oldType: "nvarchar(30)",
+            oldMaxLength: 30,
+            oldNullable: true);
+    }
+}
+
+// Needs a clean database after the step above left planted data behind.
+[DbContext(typeof(OwnTransactionContext))]
+[Migration("20260101000003_AddUniquePhone")]
+public sealed class AddUniquePhone : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.CreateIndex("IX_Contacts_Phone", "Contacts", "Phone", unique: true);
+}
+
 public sealed class BrokenFirstContext(DbContextOptions<BrokenFirstContext> options) : DbContext(options);
 
 [DbContext(typeof(BrokenFirstContext))]

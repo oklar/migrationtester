@@ -88,9 +88,11 @@ public static class MigrationTestRunner
         var warnings = new List<string>();
         try
         {
-            foreach (string id in migrationIds)
+            for (int i = 0; i < migrationIds.Count; i++)
             {
-                steps.Add(await StepRunner.RunAsync(options, database, id, cancellationToken).ConfigureAwait(false));
+                bool isLastStep = i == migrationIds.Count - 1;
+                steps.Add(await StepRunner.RunAsync(options, database, migrationIds[i], isLastStep, cancellationToken)
+                    .ConfigureAwait(false));
             }
         }
         finally

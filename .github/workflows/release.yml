@@ -1,0 +1,100 @@
+name: Release
+
+# Push a tag like v0.1.0-preview.1 to publish that version to nuget.org.
+# One-time setup (nuget.org trusted publishing policy, NUGET_USER variable): see CONTRIBUTING.md.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # create the GitHub release
+  id-token: write # exchange the GitHub OIDC token for a short-lived nuget.org API key
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: MigrationTester_Ci1
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P MigrationTester_Ci1 -Q 'SELECT 1' -b"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+          --health-start-period 20s
+
+    env:
+      MIGRATION_TESTER_SQL_TEST: Server=localhost,1433;Database=MigrationTester_Test;User Id=sa;Password=MigrationTester_Ci1;TrustServerCertificate=True;MultipleActiveResultSets=True
+      MIGRATION_TESTER_SCENARIO_TEST: Server=localhost,1433;Database=MigrationTesterExamples_Test;User Id=sa;Password=MigrationTester_Ci1;TrustServerCertificate=True;MultipleActiveResultSets=True
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Version from tag
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag '$GITHUB_REF_NAME' is not v<semver>, e.g. v0.1.0 or v0.1.0-preview.1."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-* ]]; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; else echo "prerelease=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Check the nuget.org user is configured
+        if: vars.NUGET_USER == ''
+        run: |
+          echo "::error::Set the NUGET_USER repository variable to your nuget.org username (see CONTRIBUTING.md)."
+          exit 1
+
+      - name: Restore
+        run: dotnet restore MigrationTester.slnx
+
+      - name: Build
+        run: dotnet build MigrationTester.slnx -c Release --no-restore -p:Version=${{ steps.version.outputs.version }}
+
+      - name: Test
+        run: dotnet test MigrationTester.slnx -c Release --no-build
+
+      - name: Pack
+        run: dotnet pack src/MigrationTester -c Release --no-build -p:Version=${{ steps.version.outputs.version }}
+
+      - name: Log in to nuget.org (trusted publishing)
+        id: nuget
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      - name: Push to nuget.org
+        # Pushes the matching .snupkg alongside each .nupkg.
+        run: >-
+          dotnet nuget push "artifacts/packages/*.nupkg"
+          --api-key "${{ steps.nuget.outputs.NUGET_API_KEY }}"
+          --source https://api.nuget.org/v3/index.json
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=""
+          if [[ "${{ steps.version.outputs.prerelease }}" == "true" ]]; then prerelease="--prerelease"; fi
+          gh release create "$GITHUB_REF_NAME" artifacts/packages/* \
+            --title "MigrationTester ${{ steps.version.outputs.version }}" \
+            --notes "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/$GITHUB_REF_NAME/CHANGELOG.md). Package: https://www.nuget.org/packages/MigrationTester/${{ steps.version.outputs.version }}" \
+            $prerelease

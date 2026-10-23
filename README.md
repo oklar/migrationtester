@@ -1,8 +1,12 @@
 # MigrationTester
 
-Tests EF Core migrations against SQL Server with the kind of data production already has. For each migration N, MigrationTester migrates a fresh test database to N−1, plants rows that are valid there but that N's `Up()` may not handle, then migrates to N. When the migration fails you get the SQL Server error, the planted data it broke on, and a T-SQL repair hint.
+Tests EF Core migrations against SQL Server with the kind of data production already has. For each migration N, MigrationTester brings a test database to N−1, plants rows that are valid there but that N's `Up()` may not handle, then runs N. When the migration fails you get the SQL Server error, the planted data it broke on, and a T-SQL repair hint.
 
 **Target:** EF Core 10 / .NET 10, SQL Server. Your test project references `Microsoft.EntityFrameworkCore.SqlServer`, as your app does.
+
+```bash
+dotnet add package MigrationTester --prerelease
+```
 
 ## What it plants
 
@@ -110,37 +114,8 @@ Then use `Server=127.0.0.1,1433;User Id=sa;Password=Your_password1;TrustServerCe
 - **Silent data loss** (e.g. `datetime2` → `date`, scale reduction, `nvarchar` → `varchar`) does not fail a migration, so it is not reported.
 - **Seed values avoid HasData ids** by starting identity counters and integer keys at 1,000,000 (30,000 for `smallint`, 100 for `tinyint`). Seed data with ids above that can still collide.
 
-## Working on this repo
+## More
 
-| Path | Contents |
-|------|----------|
-| `src/MigrationTester/` | The library (the only packable project) |
-| `tests/MigrationTester.Tests/` | Unit and SQL Server integration tests (xUnit.net v3) |
-| `examples/MigrationTester.Examples/` | Consumer sample; see its [README](examples/MigrationTester.Examples/README.md) |
-
-Shared build settings live in `Directory.Build.props`, package versions in `Directory.Packages.props`. Warnings, including NuGet vulnerability warnings, fail the build.
-
-```bash
-dotnet build MigrationTester.slnx
-dotnet test MigrationTester.slnx
-```
-
-Integration tests need SQL Server. The defaults in `TestSqlServerConfig` use Windows auth against the default local instance; override them with `MIGRATION_TESTER_SQL_TEST` (tests) and `MIGRATION_TESTER_SQL_DESIGN` (`dotnet ef`). For a SQL Express named instance, for example:
-
-```bash
-export MIGRATION_TESTER_SQL_TEST='Server=localhost\SQLEXPRESS;Database=MigrationTester_Test;Integrated Security=True;TrustServerCertificate=True'
-```
-
-Tests run in throwaway databases named after that one (`MigrationTester_Test_mt_…`). Before the integration tests start, any left behind by an interrupted run are dropped.
-
-**Schema cases.** `tests/MigrationTester.Tests/SchemaCases/` runs end to end over hand-written migrations for common schema shapes (rowversion columns, GUID keys, non-`dbo` schemas, required foreign keys, filtered unique indexes, type narrowing, seed rows rejected by a CHECK constraint, a broken earlier migration). When you find a schema MigrationTester gets wrong, add it there as a test of the behavior you want and mark it `Explicit` until it is fixed; the default run skips explicit tests. Run them with:
-
-```bash
-dotnet test tests/MigrationTester.Tests -- xUnit.Explicit=only
-```
-
-The test project holds several `DbContext` types, so pass `--context TestDbContext` to `dotnet ef`.
-
-**CI** (`.github/workflows/ci.yml`) runs the tests against a SQL Server container, packs the library, and builds the examples against the packed nupkg.
-
-`dotnet-tools.json` pins dotnet-ef 10.0.13 for the test and sample migrations (`dotnet tool restore`).
+- [Changelog](https://github.com/oklar/migrationrepair/blob/main/CHANGELOG.md)
+- [Sample project](https://github.com/oklar/migrationrepair/tree/main/examples/MigrationTester.Examples): nine migrations that each break on a different kind of data
+- [Contributing](https://github.com/oklar/migrationrepair/blob/main/CONTRIBUTING.md): building, testing and releasing

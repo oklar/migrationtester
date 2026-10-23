@@ -1,6 +1,6 @@
 # MigrationTester.Examples
 
-A consumer sample: an EF Core model with nine SQL Server migrations, and tests that run the adversary over them. It builds against the library source by default, so there is nothing to pack first.
+A consumer sample: an EF Core model with nine SQL Server migrations, and tests that run MigrationTester over them. It builds against the library source by default, so there is nothing to pack first.
 
 ## Prerequisites
 
@@ -11,14 +11,14 @@ A consumer sample: an EF Core model with nine SQL Server migrations, and tests t
 
 | Env var | Purpose |
 |--------|---------|
-| `MIGRATION_TESTER_SCENARIO_TEST` | Connection string for the tests. The database is dropped when the test collection starts. |
+| `MIGRATION_TESTER_SCENARIO_TEST` | Connection string for the tests. Its database name only names the throwaway databases (`MigrationTesterExamples_Test_mt_…`); each run creates and drops its own. |
 | `MIGRATION_TESTER_SCENARIO_DESIGN` | Connection string for `dotnet ef` design time. |
 
 Defaults use **Windows auth** on the default local instance, with databases `MigrationTesterExamples_Test` / `MigrationTesterExamples_Design`.
 
 ## Migrations
 
-| # | Migration | What the adversary plants |
+| # | Migration | What MigrationTester plants |
 |---|-----------|---------------------------|
 | 01 | `InitialSchema` | Nothing; the first migration has no earlier data, so it passes |
 | 02 | `AddForeignKeyOrdersCustomers` | An `Orders` row whose `CustomerId` matches no customer |
@@ -28,7 +28,7 @@ Defaults use **Windows auth** on the default local instance, with databases `Mig
 | 06 | `AddOrderStatus` | Existing `Orders` rows, which a NOT NULL column without a default cannot fill |
 | 07 | `ChangeTagExternalIdToGuid` | A `Tags.ExternalId` that is not a GUID |
 | 08 | `ShrinkProductPricePrecision` | A `Products.Price` too large for `decimal(10,2)` |
-| 09 | `AddCheckConstraintPositivePrice` | Nothing; CHECK constraints are not seeded automatically, so it passes |
+| 09 | `AddCheckConstraintPositivePrice` | Nothing; CHECK constraints are never seeded (reported as `NotSeeded`), so it passes |
 
 ## Commands
 
@@ -38,9 +38,9 @@ From the repository root:
 dotnet test examples/MigrationTester.Examples
 ```
 
-`RunAllAsync_each_migration_triggers_its_adversarial_scenario` asserts that 02–08 fail and 01 and 09 pass, so it is green.
+`Each_broken_migration_fails_on_its_kind_of_data` asserts that 02–08 fail, each matched to its kind of data, and that 01 and 09 pass, so it is green.
 
-`RunAsync_single_migration_shows_failure_summary_and_hints` fails on purpose so the test output shows the full failure summary and T-SQL repair hints. It is `Explicit`, so run it by asking for it:
+`Migration_handles_data_that_exists_before_it` is the pattern you would use in your own project: one `[Theory]` case per migration, each calling `ThrowIfFailed()`. Here 02–08 fail by design and show the full report with T-SQL repair hints, so it is `Explicit`; run it by asking for it:
 
 ```bash
 dotnet test examples/MigrationTester.Examples --logger "console;verbosity=detailed" -- xUnit.Explicit=only

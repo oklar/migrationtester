@@ -176,7 +176,7 @@ internal static class SeedSqlGenerator
     /// for foreign key columns, otherwise an ordinary value.
     /// </summary>
     public static bool TryGetFilterValues(
-        AdversaryScenario scenario,
+        MigrationScenario scenario,
         TableMetadata table,
         out IReadOnlyList<ColumnValue> values,
         [NotNullWhen(false)] out string? failure)
@@ -226,7 +226,7 @@ internal static class SeedSqlGenerator
     /// only needs rows to exist (NOT NULL column without default) or is planted by copying a row (duplicates).
     /// </summary>
     public static bool TryGetBadValues(
-        AdversaryScenario scenario,
+        MigrationScenario scenario,
         TableMetadata table,
         out IReadOnlyList<ColumnValue> values,
         [NotNullWhen(false)] out string? failure)
@@ -235,7 +235,7 @@ internal static class SeedSqlGenerator
         failure = null;
         switch (scenario.Kind)
         {
-            case AdversaryScenarioKind.NonNullableColumnWithNull:
+            case ScenarioKind.NonNullableColumnWithNull:
                 if (FindColumn(scenario, table, out var nullable, out failure))
                 {
                     if (!nullable.IsNullable)
@@ -250,7 +250,7 @@ internal static class SeedSqlGenerator
 
                 return false;
 
-            case AdversaryScenarioKind.MaxLengthExceededAfterShrink:
+            case ScenarioKind.MaxLengthExceededAfterShrink:
                 if (!FindColumn(scenario, table, out var sized, out failure))
                 {
                     return false;
@@ -272,8 +272,8 @@ internal static class SeedSqlGenerator
                 values = [new ColumnValue(sized.Name, longValue)];
                 return true;
 
-            case AdversaryScenarioKind.ColumnTypeConversionIncompatible:
-            case AdversaryScenarioKind.DecimalPrecisionOverflow:
+            case ScenarioKind.ColumnTypeConversionIncompatible:
+            case ScenarioKind.DecimalPrecisionOverflow:
                 if (!FindColumn(scenario, table, out var converted, out failure))
                 {
                     return false;
@@ -288,7 +288,7 @@ internal static class SeedSqlGenerator
                 values = [new ColumnValue(converted.Name, scenario.SeedValue)];
                 return true;
 
-            case AdversaryScenarioKind.ForeignKeyOrphan:
+            case ScenarioKind.ForeignKeyOrphan:
                 var orphan = new List<ColumnValue>();
                 foreach (string name in scenario.Columns)
                 {
@@ -316,7 +316,7 @@ internal static class SeedSqlGenerator
     }
 
     private static bool FindColumn(
-        AdversaryScenario scenario,
+        MigrationScenario scenario,
         TableMetadata table,
         [NotNullWhen(true)] out ColumnMetadata? column,
         [NotNullWhen(false)] out string? failure)

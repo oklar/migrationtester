@@ -1,31 +1,24 @@
-using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace MigrationTester.Tests;
 
 /// <summary>
-/// Groups SQL integration tests so they do not run in parallel against the same database,
-/// and drops the test database once at the start of each <c>dotnet test</c> run.
+/// Groups SQL integration tests so they run one at a time, and clears databases an interrupted
+/// earlier run may have left behind before any of them starts.
 /// </summary>
 [CollectionDefinition("SqlServer integration")]
 public sealed class SqlServerIntegrationCollection : ICollectionFixture<SqlServerIntegrationFixture>
 {
 }
 
-/// <summary>
-/// Drops <see cref="TestSqlServerConfig.TestRunConnectionString"/> before any integration test runs.
-/// After the session, the database remains for SSMS inspection; the next run drops it again here.
-/// </summary>
 public sealed class SqlServerIntegrationFixture : IAsyncLifetime
 {
     public async ValueTask InitializeAsync()
     {
-        var options = new DbContextOptionsBuilder<TestDbContext>()
-            .UseSqlServer(TestSqlServerConfig.TestRunConnectionString)
-            .Options;
-
-        await using var db = new TestDbContext(options);
-        await db.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+        foreach (string name in await TestSqlServerConfig.TestDatabasesAsync(TestContext.Current.CancellationToken))
+        {
+            await TestSqlServerConfig.DropDatabaseAsync(name, TestContext.Current.CancellationToken);
+        }
     }
 
     public ValueTask DisposeAsync() => default;

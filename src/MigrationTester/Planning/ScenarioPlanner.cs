@@ -12,11 +12,11 @@ internal static class ScenarioPlanner
 {
     private const string TableMissing = "Table does not exist at migration N-1.";
 
-    public static IReadOnlyList<AdversaryScenario> Plan(
+    public static IReadOnlyList<MigrationScenario> Plan(
         IReadOnlyList<MigrationOperation> operations,
         RelationalSchemaModel schema)
     {
-        var list = new List<AdversaryScenario>();
+        var list = new List<MigrationScenario>();
 
         foreach (var op in operations)
         {
@@ -55,7 +55,7 @@ internal static class ScenarioPlanner
         return list;
     }
 
-    private static AdversaryScenario UniqueFromIndex(CreateIndexOperation idx, RelationalSchemaModel schema)
+    private static MigrationScenario UniqueFromIndex(CreateIndexOperation idx, RelationalSchemaModel schema)
     {
         string name = $"Duplicate values for unique index '{idx.Name}' on '{idx.Table}'";
         if (string.IsNullOrWhiteSpace(idx.Filter))
@@ -66,13 +66,9 @@ internal static class ScenarioPlanner
         if (!NotNullFilter.TryParse(idx.Filter, out var filterColumns))
         {
             var unfiltered = Duplicate(name, idx, idx.Schema, idx.Table, idx.Columns, schema);
-            return unfiltered.Skipped
+            return unfiltered.Status != ScenarioStatus.Planted
                 ? unfiltered
-                : unfiltered with
-                {
-                    Skipped = true,
-                    SkipReason = $"Filter '{idx.Filter}' is not a plain IS NOT NULL filter; duplicate seeds may not satisfy it."
-                };
+                : unfiltered.NotSeeded($"Filter '{idx.Filter}' is not a plain IS NOT NULL filter; duplicate seeds may not satisfy it.");
         }
 
         // Duplicates only count where the filter holds, so the seeded copies get non-NULL filter columns.
@@ -82,7 +78,7 @@ internal static class ScenarioPlanner
         };
     }
 
-    private static AdversaryScenario Duplicate(
+    private static MigrationScenario Duplicate(
         string name,
         MigrationOperation op,
         string? schemaName,
@@ -93,25 +89,29 @@ internal static class ScenarioPlanner
     {
         var table = schema.FindTable(schemaName, tableName);
         var columns = keyColumns?.ToList() ?? [];
-        string? skipReason = table is null
-            ? TableMissing
-            : columns.Count == 0
-                ? "Key has no column list; cannot build duplicate seed."
-                : AlreadyUnique(table, columns, notNullFiltered) is { } existing
-                    ? $"Existing unique key '{existing.Name}' already prevents duplicates in these columns at N-1."
-                    : null;
-
-        return new AdversaryScenario
+        var scenario = new MigrationScenario
         {
-            Kind = AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint,
+            Kind = ScenarioKind.DuplicateUniqueIndexOrConstraint,
             Name = name,
             Schema = schema.Resolve(schemaName, tableName).Schema,
             Table = tableName,
             Columns = columns,
-            SourceOperation = op,
-            Skipped = skipReason is not null,
-            SkipReason = skipReason
+            SourceOperation = op
         };
+
+        if (table is null)
+        {
+            return scenario.NotApplicable(TableMissing);
+        }
+
+        if (columns.Count == 0)
+        {
+            return scenario.NotSeeded("Key has no column list; cannot build duplicate seed.");
+        }
+
+        return AlreadyUnique(table, columns, notNullFiltered) is { } existing
+            ? scenario.NotApplicable($"Existing unique key '{existing.Name}' already prevents duplicates in these columns at N-1.")
+            : scenario;
     }
 
     /// <summary>
@@ -126,13 +126,13 @@ internal static class ScenarioPlanner
             && (k.Filter is null || (notNullFiltered && NotNullFilter.TryParse(k.Filter, out _))));
     }
 
-    private static AdversaryScenario ForeignKeyScenario(AddForeignKeyOperation fk, RelationalSchemaModel schema)
+    private static MigrationScenario ForeignKeyScenario(AddForeignKeyOperation fk, RelationalSchemaModel schema)
     {
         bool present = schema.FindTable(fk.Schema, fk.Table) is not null
             && schema.FindTable(fk.PrincipalSchema, fk.PrincipalTable) is not null;
-        return new AdversaryScenario
+        var scenario = new MigrationScenario
         {
-            Kind = AdversaryScenarioKind.ForeignKeyOrphan,
+            Kind = ScenarioKind.ForeignKeyOrphan,
             Name = $"Orphan rows in '{fk.Table}' referencing missing '{fk.PrincipalTable}' when FK is added",
             Schema = schema.Resolve(fk.Schema, fk.Table).Schema,
             Table = fk.Table,
@@ -140,31 +140,30 @@ internal static class ScenarioPlanner
             PrincipalSchema = schema.Resolve(fk.PrincipalSchema, fk.PrincipalTable).Schema,
             PrincipalTable = fk.PrincipalTable,
             PrincipalColumns = fk.PrincipalColumns?.ToList() ?? [],
-            SourceOperation = fk,
-            Skipped = !present,
-            SkipReason = present
-                ? null
-                : "Dependent or principal table missing at N-1; cannot seed orphan FK row."
+            SourceOperation = fk
         };
+        return present
+            ? scenario
+            : scenario.NotApplicable("Dependent or principal table missing at N-1; cannot seed orphan FK row.");
     }
 
-    private static IEnumerable<AdversaryScenario> AlterColumnScenarios(
+    private static IEnumerable<MigrationScenario> AlterColumnScenarios(
         AlterColumnOperation alter,
         RelationalSchemaModel schema)
     {
         var table = schema.FindTable(alter.Schema, alter.Table);
         var live = table?.FindColumn(alter.Name);
         var oldCol = alter.OldColumn;
-        var baseScenario = new AdversaryScenario
+        var baseScenario = new MigrationScenario
         {
-            Kind = AdversaryScenarioKind.NonNullableColumnWithNull,
+            Kind = ScenarioKind.NonNullableColumnWithNull,
             Name = "",
             Schema = schema.Resolve(alter.Schema, alter.Table).Schema,
             Table = alter.Table,
             Columns = [alter.Name],
             SourceOperation = alter,
-            Skipped = table is null,
-            SkipReason = table is null ? TableMissing : null
+            Status = table is null ? ScenarioStatus.NotApplicable : ScenarioStatus.Planted,
+            Reason = table is null ? TableMissing : null
         };
 
         bool wasNullable = live?.IsNullable ?? oldCol.IsNullable;
@@ -187,7 +186,7 @@ internal static class ScenarioPlanner
         {
             yield return baseScenario with
             {
-                Kind = AdversaryScenarioKind.MaxLengthExceededAfterShrink,
+                Kind = ScenarioKind.MaxLengthExceededAfterShrink,
                 Name = $"String longer than new max length for '{alter.Name}'",
                 OldMaxLength = oldMax == SqlType.Max ? null : oldMax,
                 NewMaxLength = nm
@@ -204,7 +203,7 @@ internal static class ScenarioPlanner
         {
             yield return baseScenario with
             {
-                Kind = AdversaryScenarioKind.DecimalPrecisionOverflow,
+                Kind = ScenarioKind.DecimalPrecisionOverflow,
                 Name = $"Value overflow when precision shrinks for '{alter.Name}'",
                 OldPrecision = from.Precision,
                 NewPrecision = to.Precision,
@@ -219,7 +218,7 @@ internal static class ScenarioPlanner
             string newText = alter.ColumnType ?? to.ToString();
             yield return baseScenario with
             {
-                Kind = AdversaryScenarioKind.ColumnTypeConversionIncompatible,
+                Kind = ScenarioKind.ColumnTypeConversionIncompatible,
                 Name = $"Existing data in '{alter.Name}' may not convert from {oldText} to {newText}",
                 OldColumnType = oldText,
                 NewColumnType = newText,
@@ -228,25 +227,25 @@ internal static class ScenarioPlanner
         }
     }
 
-    private static AdversaryScenario CheckScenario(AddCheckConstraintOperation chk, RelationalSchemaModel schema)
+    private static MigrationScenario CheckScenario(AddCheckConstraintOperation chk, RelationalSchemaModel schema)
     {
         bool present = schema.FindTable(chk.Schema, chk.Table) is not null;
-        return new AdversaryScenario
+        return new MigrationScenario
         {
-            Kind = AdversaryScenarioKind.CheckConstraintViolation,
+            Kind = ScenarioKind.CheckConstraintViolation,
             Name = $"Rows violating new check constraint '{chk.Name}'",
             Schema = schema.Resolve(chk.Schema, chk.Table).Schema,
             Table = chk.Table,
             Columns = [],
             SourceOperation = chk,
-            Skipped = true,
-            SkipReason = present
+            Status = present ? ScenarioStatus.NotSeeded : ScenarioStatus.NotApplicable,
+            Reason = present
                 ? "Automatic row generation from arbitrary CHECK SQL is not supported; add a custom integration test."
                 : TableMissing
         };
     }
 
-    private static AdversaryScenario? AddColumnScenario(AddColumnOperation addCol, RelationalSchemaModel schema)
+    private static MigrationScenario? AddColumnScenario(AddColumnOperation addCol, RelationalSchemaModel schema)
     {
         // Identity, rowversion and computed columns fill existing rows themselves.
         if (addCol.IsNullable
@@ -260,16 +259,16 @@ internal static class ScenarioPlanner
         }
 
         bool present = schema.FindTable(addCol.Schema, addCol.Table) is not null;
-        return new AdversaryScenario
+        return new MigrationScenario
         {
-            Kind = AdversaryScenarioKind.NotNullColumnAddedWithoutDefault,
+            Kind = ScenarioKind.NotNullColumnAddedWithoutDefault,
             Name = $"NOT NULL column '{addCol.Name}' added to '{addCol.Table}' without a default value",
             Schema = schema.Resolve(addCol.Schema, addCol.Table).Schema,
             Table = addCol.Table,
             Columns = [addCol.Name],
             SourceOperation = addCol,
-            Skipped = !present,
-            SkipReason = present ? null : TableMissing
+            Status = present ? ScenarioStatus.Planted : ScenarioStatus.NotApplicable,
+            Reason = present ? null : TableMissing
         };
     }
 }

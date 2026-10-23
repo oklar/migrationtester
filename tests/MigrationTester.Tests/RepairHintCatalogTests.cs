@@ -8,9 +8,9 @@ public sealed class RepairHintCatalogTests
     [Fact]
     public void ForScenario_duplicate_unique_includes_deduplicate_keyword()
     {
-        var scenario = new AdversaryScenario
+        var scenario = new MigrationScenario
         {
-            Kind = AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint,
+            Kind = ScenarioKind.DuplicateUniqueIndexOrConstraint,
             Name = "test",
             Table = "Items",
             Columns = ["Code"]
@@ -26,9 +26,9 @@ public sealed class RepairHintCatalogTests
     [Fact]
     public void ForScenario_foreign_key_orphan_includes_delete_pattern()
     {
-        var scenario = new AdversaryScenario
+        var scenario = new MigrationScenario
         {
-            Kind = AdversaryScenarioKind.ForeignKeyOrphan,
+            Kind = ScenarioKind.ForeignKeyOrphan,
             Name = "test",
             Table = "Orders",
             Columns = ["CustomerId"],
@@ -46,9 +46,9 @@ public sealed class RepairHintCatalogTests
     [Fact]
     public void ForScenario_non_nullable_includes_update_where_null()
     {
-        var scenario = new AdversaryScenario
+        var scenario = new MigrationScenario
         {
-            Kind = AdversaryScenarioKind.NonNullableColumnWithNull,
+            Kind = ScenarioKind.NonNullableColumnWithNull,
             Name = "test",
             Table = "Items",
             Columns = ["Name"]
@@ -64,9 +64,9 @@ public sealed class RepairHintCatalogTests
     [Fact]
     public void ForScenario_max_length_includes_truncation_update()
     {
-        var scenario = new AdversaryScenario
+        var scenario = new MigrationScenario
         {
-            Kind = AdversaryScenarioKind.MaxLengthExceededAfterShrink,
+            Kind = ScenarioKind.MaxLengthExceededAfterShrink,
             Name = "test",
             Table = "Items",
             Columns = ["Code"],
@@ -82,9 +82,9 @@ public sealed class RepairHintCatalogTests
     [Fact]
     public void ForScenario_check_constraint_includes_predicate_guidance()
     {
-        var scenario = new AdversaryScenario
+        var scenario = new MigrationScenario
         {
-            Kind = AdversaryScenarioKind.CheckConstraintViolation,
+            Kind = ScenarioKind.CheckConstraintViolation,
             Name = "test",
             Table = "Items"
         };
@@ -97,9 +97,9 @@ public sealed class RepairHintCatalogTests
     [Fact]
     public void ForScenario_not_null_add_column_includes_default_guidance()
     {
-        var scenario = new AdversaryScenario
+        var scenario = new MigrationScenario
         {
-            Kind = AdversaryScenarioKind.NotNullColumnAddedWithoutDefault,
+            Kind = ScenarioKind.NotNullColumnAddedWithoutDefault,
             Name = "test",
             Table = "Items",
             Columns = ["Status"]
@@ -115,9 +115,9 @@ public sealed class RepairHintCatalogTests
     [Fact]
     public void ForScenario_type_conversion_includes_try_cast()
     {
-        var scenario = new AdversaryScenario
+        var scenario = new MigrationScenario
         {
-            Kind = AdversaryScenarioKind.ColumnTypeConversionIncompatible,
+            Kind = ScenarioKind.ColumnTypeConversionIncompatible,
             Name = "test",
             Table = "Items",
             Columns = ["Code"],
@@ -136,9 +136,9 @@ public sealed class RepairHintCatalogTests
     [Fact]
     public void ForScenario_precision_overflow_includes_power_and_round()
     {
-        var scenario = new AdversaryScenario
+        var scenario = new MigrationScenario
         {
-            Kind = AdversaryScenarioKind.DecimalPrecisionOverflow,
+            Kind = ScenarioKind.DecimalPrecisionOverflow,
             Name = "test",
             Table = "Items",
             Columns = ["Price"],

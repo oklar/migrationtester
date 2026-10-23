@@ -1,13 +1,15 @@
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using MigrationTester.Planning;
 
-namespace MigrationTester.Planning;
+namespace MigrationTester;
 
 /// <summary>
-/// A deterministic adversarial case derived from a single <see cref="MigrationOperation"/>.
+/// One piece of data a migration may fail on, derived from a single <see cref="MigrationOperation"/>,
+/// and whether it was planted before the migration ran.
 /// </summary>
-public sealed record AdversaryScenario
+public sealed record MigrationScenario
 {
-    public required AdversaryScenarioKind Kind { get; init; }
+    public required ScenarioKind Kind { get; init; }
 
     /// <summary>User-facing label for assertions and reports.</summary>
     public required string Name { get; init; }
@@ -15,7 +17,7 @@ public sealed record AdversaryScenario
     /// <summary>Schema of <see cref="Table"/>; null when not resolved against a live database.</summary>
     public string? Schema { get; init; }
 
-    /// <summary>Table targeted for seed SQL (unquoted logical name).</summary>
+    /// <summary>Table the data is planted in (unquoted name).</summary>
     public required string Table { get; init; }
 
     /// <summary>Columns involved (e.g. unique key columns, FK columns).</summary>
@@ -24,12 +26,12 @@ public sealed record AdversaryScenario
     /// <summary>Schema of <see cref="PrincipalTable"/> for FK scenarios.</summary>
     public string? PrincipalSchema { get; init; }
 
-    /// <summary>Optional related principal table for FK scenarios.</summary>
+    /// <summary>Principal table for FK scenarios.</summary>
     public string? PrincipalTable { get; init; }
 
     public IReadOnlyList<string>? PrincipalColumns { get; init; }
 
-    /// <summary>For length reduction: old max length (nullable = max/unlimited for strings).</summary>
+    /// <summary>For length reduction: old max length (null = max/unlimited for strings).</summary>
     public int? OldMaxLength { get; init; }
 
     /// <summary>For length reduction: new max length after migration.</summary>
@@ -53,20 +55,24 @@ public sealed record AdversaryScenario
     /// <summary>For precision reduction: new scale.</summary>
     public int? NewScale { get; init; }
 
-    /// <summary>Original migration operation (for debugging).</summary>
+    /// <summary>The migration operation the scenario comes from.</summary>
     public MigrationOperation? SourceOperation { get; init; }
 
-    /// <summary>
-    /// True when no adversarial data was planted for this scenario: the planner ruled it out
-    /// (e.g. the table does not exist at N-1) or seeding could not insert the data.
-    /// </summary>
-    public bool Skipped { get; init; }
+    public ScenarioStatus Status { get; init; } = ScenarioStatus.Planted;
 
-    public string? SkipReason { get; init; }
+    /// <summary>Why the data was not planted; null when <see cref="Status"/> is <see cref="ScenarioStatus.Planted"/>.</summary>
+    public string? Reason { get; init; }
+
+    /// <summary>T-SQL showing how a migration can fix data like this before the statement that fails on it.</summary>
+    public string RepairHint => RepairHintCatalog.ForScenario(this);
 
     /// <summary>SQL literal valid for the column at N-1 that the migration's conversion rejects.</summary>
     internal string? SeedValue { get; init; }
 
     /// <summary>For filtered unique indexes: columns the filter requires to be non-NULL.</summary>
     internal IReadOnlyList<string> NotNullFilterColumns { get; init; } = [];
+
+    internal MigrationScenario NotApplicable(string reason) => this with { Status = ScenarioStatus.NotApplicable, Reason = reason };
+
+    internal MigrationScenario NotSeeded(string reason) => this with { Status = ScenarioStatus.NotSeeded, Reason = reason };
 }

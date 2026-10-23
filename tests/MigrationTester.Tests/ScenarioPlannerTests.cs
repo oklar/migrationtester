@@ -25,8 +25,8 @@ public sealed class ScenarioPlannerTests
         var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
-        Assert.Equal(AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint, s.Kind);
-        Assert.False(s.Skipped);
+        Assert.Equal(ScenarioKind.DuplicateUniqueIndexOrConstraint, s.Kind);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
     }
 
     [Fact]
@@ -45,7 +45,7 @@ public sealed class ScenarioPlannerTests
 
         var scenarios = ScenarioPlanner.Plan(ops, TestSchema.WithTables());
         var s = Assert.Single(scenarios);
-        Assert.True(s.Skipped);
+        Assert.Equal(ScenarioStatus.NotApplicable, s.Status);
     }
 
     [Fact]
@@ -67,8 +67,8 @@ public sealed class ScenarioPlannerTests
         var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
-        Assert.Equal(AdversaryScenarioKind.ForeignKeyOrphan, s.Kind);
-        Assert.False(s.Skipped);
+        Assert.Equal(ScenarioKind.ForeignKeyOrphan, s.Kind);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
         Assert.Equal("Orders", s.Table);
         Assert.Equal("Customers", s.PrincipalTable);
     }
@@ -92,7 +92,7 @@ public sealed class ScenarioPlannerTests
         var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
-        Assert.True(s.Skipped);
+        Assert.Equal(ScenarioStatus.NotApplicable, s.Status);
     }
 
     [Fact]
@@ -111,8 +111,8 @@ public sealed class ScenarioPlannerTests
         var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
-        Assert.Equal(AdversaryScenarioKind.NonNullableColumnWithNull, s.Kind);
-        Assert.False(s.Skipped);
+        Assert.Equal(ScenarioKind.NonNullableColumnWithNull, s.Kind);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
         Assert.Equal("Description", Assert.Single(s.Columns));
     }
 
@@ -132,7 +132,7 @@ public sealed class ScenarioPlannerTests
         var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
-        Assert.Equal(AdversaryScenarioKind.MaxLengthExceededAfterShrink, s.Kind);
+        Assert.Equal(ScenarioKind.MaxLengthExceededAfterShrink, s.Kind);
         Assert.Equal(50, s.NewMaxLength);
         Assert.Equal(200, s.OldMaxLength);
     }
@@ -155,8 +155,8 @@ public sealed class ScenarioPlannerTests
         var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         Assert.Equal(2, scenarios.Count);
-        Assert.Contains(scenarios, s => s.Kind == AdversaryScenarioKind.NonNullableColumnWithNull);
-        Assert.Contains(scenarios, s => s.Kind == AdversaryScenarioKind.MaxLengthExceededAfterShrink);
+        Assert.Contains(scenarios, s => s.Kind == ScenarioKind.NonNullableColumnWithNull);
+        Assert.Contains(scenarios, s => s.Kind == ScenarioKind.MaxLengthExceededAfterShrink);
     }
 
     [Fact]
@@ -176,9 +176,9 @@ public sealed class ScenarioPlannerTests
         var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
-        Assert.Equal(AdversaryScenarioKind.CheckConstraintViolation, s.Kind);
-        Assert.True(s.Skipped);
-        Assert.NotNull(s.SkipReason);
+        Assert.Equal(ScenarioKind.CheckConstraintViolation, s.Kind);
+        Assert.Equal(ScenarioStatus.NotSeeded, s.Status);
+        Assert.NotNull(s.Reason);
     }
 
     [Fact]
@@ -221,8 +221,8 @@ public sealed class ScenarioPlannerTests
         var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
-        Assert.Equal(AdversaryScenarioKind.NotNullColumnAddedWithoutDefault, s.Kind);
-        Assert.False(s.Skipped);
+        Assert.Equal(ScenarioKind.NotNullColumnAddedWithoutDefault, s.Kind);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
         Assert.Equal("Status", Assert.Single(s.Columns));
     }
 
@@ -283,8 +283,8 @@ public sealed class ScenarioPlannerTests
         var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
-        Assert.Equal(AdversaryScenarioKind.ColumnTypeConversionIncompatible, s.Kind);
-        Assert.False(s.Skipped);
+        Assert.Equal(ScenarioKind.ColumnTypeConversionIncompatible, s.Kind);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
         Assert.Equal("nvarchar(100)", s.OldColumnType);
         Assert.Equal("int", s.NewColumnType);
     }
@@ -306,7 +306,7 @@ public sealed class ScenarioPlannerTests
         var schema = TestSchema.WithTables("Items");
         var scenarios = ScenarioPlanner.Plan(ops, schema);
 
-        Assert.DoesNotContain(scenarios, s => s.Kind == AdversaryScenarioKind.ColumnTypeConversionIncompatible);
+        Assert.DoesNotContain(scenarios, s => s.Kind == ScenarioKind.ColumnTypeConversionIncompatible);
     }
 
     [Fact]
@@ -329,7 +329,7 @@ public sealed class ScenarioPlannerTests
         var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
-        Assert.Equal(AdversaryScenarioKind.DecimalPrecisionOverflow, s.Kind);
+        Assert.Equal(ScenarioKind.DecimalPrecisionOverflow, s.Kind);
         Assert.Equal(18, s.OldPrecision);
         Assert.Equal(10, s.NewPrecision);
         Assert.Equal(6, s.OldScale);
@@ -375,8 +375,8 @@ public sealed class ScenarioPlannerTests
         var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
-        Assert.Equal(AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint, s.Kind);
-        Assert.False(s.Skipped);
+        Assert.Equal(ScenarioKind.DuplicateUniqueIndexOrConstraint, s.Kind);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
         Assert.Contains("primary key", s.Name, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -397,7 +397,7 @@ public sealed class ScenarioPlannerTests
         var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
-        Assert.True(s.Skipped);
+        Assert.Equal(ScenarioStatus.NotApplicable, s.Status);
     }
 
     [Fact]
@@ -416,7 +416,7 @@ public sealed class ScenarioPlannerTests
         var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
-        Assert.False(s.Skipped, s.SkipReason);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
         Assert.Equal("app", s.Schema);
     }
 
@@ -431,7 +431,7 @@ public sealed class ScenarioPlannerTests
         var schema = TestSchema.Of(new TableMetadata { Name = new TableName("app", "Items"), Columns = [] });
         var scenarios = ScenarioPlanner.Plan(ops, schema);
 
-        Assert.True(Assert.Single(scenarios).Skipped);
+        Assert.Equal(ScenarioStatus.NotApplicable, Assert.Single(scenarios).Status);
     }
 
     [Fact]
@@ -445,7 +445,7 @@ public sealed class ScenarioPlannerTests
         var scenarios = ScenarioPlanner.Plan(ops, TestSchema.WithTables("Users"));
 
         var s = Assert.Single(scenarios);
-        Assert.False(s.Skipped, s.SkipReason);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
         Assert.Equal(["Email"], s.NotNullFilterColumns);
     }
 
@@ -460,8 +460,8 @@ public sealed class ScenarioPlannerTests
         var scenarios = ScenarioPlanner.Plan(ops, TestSchema.WithTables("Users"));
 
         var s = Assert.Single(scenarios);
-        Assert.True(s.Skipped);
-        Assert.Contains("[Deleted] = 0", s.SkipReason);
+        Assert.Equal(ScenarioStatus.NotSeeded, s.Status);
+        Assert.Contains("[Deleted] = 0", s.Reason);
     }
 
     [Fact]
@@ -483,8 +483,8 @@ public sealed class ScenarioPlannerTests
         var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
-        Assert.True(s.Skipped);
-        Assert.Contains("IX_Users_Email", s.SkipReason);
+        Assert.Equal(ScenarioStatus.NotApplicable, s.Status);
+        Assert.Contains("IX_Users_Email", s.Reason);
     }
 
     [Fact]
@@ -505,8 +505,8 @@ public sealed class ScenarioPlannerTests
         var scenarios = ScenarioPlanner.Plan(ops, schema);
 
         var s = Assert.Single(scenarios);
-        Assert.True(s.Skipped);
-        Assert.Contains("already prevents duplicates", s.SkipReason);
+        Assert.Equal(ScenarioStatus.NotApplicable, s.Status);
+        Assert.Contains("already prevents duplicates", s.Reason);
     }
 
     [Theory]
@@ -521,7 +521,7 @@ public sealed class ScenarioPlannerTests
         var scenarios = ScenarioPlanner.Plan([alter], TestSchema.WithTables("Items"));
 
         var s = Assert.Single(scenarios);
-        Assert.Equal(AdversaryScenarioKind.ColumnTypeConversionIncompatible, s.Kind);
+        Assert.Equal(ScenarioKind.ColumnTypeConversionIncompatible, s.Kind);
         Assert.Equal(seed, s.SeedValue);
     }
 
@@ -534,7 +534,7 @@ public sealed class ScenarioPlannerTests
         var scenarios = ScenarioPlanner.Plan([alter], TestSchema.WithTables("Items"));
 
         var s = Assert.Single(scenarios);
-        Assert.Equal(AdversaryScenarioKind.DecimalPrecisionOverflow, s.Kind);
+        Assert.Equal(ScenarioKind.DecimalPrecisionOverflow, s.Kind);
         Assert.Equal("100000000000000", s.SeedValue);
     }
 

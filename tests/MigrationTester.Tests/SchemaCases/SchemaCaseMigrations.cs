@@ -328,6 +328,27 @@ public sealed class AddUniqueUserProfile : Migration
         migrationBuilder.CreateIndex("IX_Users_ProfileId", "Users", "ProfileId", unique: true, filter: "[ProfileId] IS NOT NULL");
 }
 
+public sealed class BrokenFirstContext(DbContextOptions<BrokenFirstContext> options) : DbContext(options);
+
+[DbContext(typeof(BrokenFirstContext))]
+[Migration("20260101000001_AlwaysFails")]
+public sealed class AlwaysFails : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.Sql("THROW 50000, 'This migration fails on any database.', 1;");
+}
+
+[DbContext(typeof(BrokenFirstContext))]
+[Migration("20260101000002_CreateNotes")]
+public sealed class CreateNotes : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.CreateTable(
+            name: "Notes",
+            columns: table => new { Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1") },
+            constraints: table => table.PrimaryKey("PK_Notes", x => x.Id));
+}
+
 [DbContext(typeof(CheckedStatusContext))]
 [Migration("20260101000002_AddUniqueTicketCode")]
 public sealed class AddUniqueTicketCode : Migration

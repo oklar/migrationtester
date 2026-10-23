@@ -4,9 +4,15 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
 
-  <!-- Library dependency: the lowest EF Core version we support, so consumers are not forced to upgrade. -->
+  <!--
+    Library dependencies: the lowest versions EF Core 10's SQL Server provider uses, so consumers are not
+    forced to upgrade. Pkcs is the exception: SqlClient pulls in a vulnerable 9.0.x, so the library pins
+    the patched version for itself and its consumers.
+  -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.Data.SqlClient" Version="6.1.1" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
   </ItemGroup>
 
   <!-- Tests and examples. -->
@@ -17,8 +23,6 @@
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
-    <!-- Patched override for the vulnerable 9.0.11 that Microsoft.Data.SqlClient 6.1.7 pulls in. -->
-    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
   </ItemGroup>
 
   <!-- Examples built against the packed nupkg: -p:UseMigrationTesterPackage=true -->

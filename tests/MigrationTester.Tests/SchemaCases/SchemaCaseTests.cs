@@ -1,155 +1,169 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
-using MigrationTester.Planning;
-using MigrationTester.Runner;
 using Xunit;
 
 namespace MigrationTester.Tests.SchemaCases;
 
 /// <summary>
 /// End-to-end runs over common schema shapes, each with its own hand-written migrations
-/// (see <see cref="CreateDocuments"/> and friends): the adversary plants its data and the migration fails on it.
+/// (see <see cref="CreateDocuments"/> and friends): the data is planted and the migration fails on it.
 /// </summary>
 [Collection("SqlServer integration")]
 public sealed class SchemaCaseTests
 {
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
     [Fact]
     public async Task Rowversion_column_does_not_break_seeding()
     {
-        var result = await RunAsync<RowVersionContext>("20260101000002_AddUniqueDocumentTitle", o => new(o));
+        var step = await RunAsync<RowVersionContext>("20260101000002_AddUniqueDocumentTitle", o => new(o));
 
-        AssertBrokenByAdversary(result, AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint);
+        AssertBrokenBy(step, ScenarioKind.DuplicateUniqueIndexOrConstraint);
     }
 
     [Fact]
     public async Task Guid_primary_key_does_not_break_duplicate_seeding()
     {
-        var result = await RunAsync<GuidKeyContext>("20260101000002_AddUniqueAccountEmail", o => new(o));
+        var step = await RunAsync<GuidKeyContext>("20260101000002_AddUniqueAccountEmail", o => new(o));
 
-        AssertBrokenByAdversary(result, AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint);
+        AssertBrokenBy(step, ScenarioKind.DuplicateUniqueIndexOrConstraint);
     }
 
     [Fact]
     public async Task Length_shrink_seeds_value_that_fits_old_column()
     {
-        var result = await RunAsync<ShrinkLengthContext>("20260101000002_ShrinkProductCode", o => new(o));
+        var step = await RunAsync<ShrinkLengthContext>("20260101000002_ShrinkProductCode", o => new(o));
 
-        AssertBrokenByAdversary(result, AdversaryScenarioKind.MaxLengthExceededAfterShrink);
+        AssertBrokenBy(step, ScenarioKind.MaxLengthExceededAfterShrink);
     }
 
     [Fact]
     public async Task Unique_index_in_non_dbo_schema_is_exercised()
     {
-        var result = await RunAsync<CustomSchemaContext>("20260101000002_AddUniqueAppItemCode", o => new(o));
+        var step = await RunAsync<CustomSchemaContext>("20260101000002_AddUniqueAppItemCode", o => new(o));
 
-        AssertBrokenByAdversary(result, AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint);
-        Assert.Contains(result.SqlExecuted, sql => sql.Contains("[app].[Items]", StringComparison.Ordinal));
+        AssertBrokenBy(step, ScenarioKind.DuplicateUniqueIndexOrConstraint);
+        Assert.Contains(step.SqlExecuted, sql => sql.Contains("[app].[Items]", StringComparison.Ordinal));
     }
 
     [Fact]
     public async Task Not_null_seed_keeps_required_foreign_key_valid()
     {
-        var result = await RunAsync<RequiredForeignKeyContext>("20260101000002_MakeOrderNoteRequired", o => new(o));
+        var step = await RunAsync<RequiredForeignKeyContext>("20260101000002_MakeOrderNoteRequired", o => new(o));
 
-        AssertBrokenByAdversary(result, AdversaryScenarioKind.NonNullableColumnWithNull);
+        AssertBrokenBy(step, ScenarioKind.NonNullableColumnWithNull);
     }
 
     [Fact]
     public async Task Int_to_smallint_narrowing_is_exercised()
     {
-        var result = await RunAsync<NarrowingContext>("20260101000002_NarrowQuantityToSmallint", o => new(o));
+        var step = await RunAsync<NarrowingContext>("20260101000002_NarrowQuantityToSmallint", o => new(o));
 
-        AssertBrokenByAdversary(result, AdversaryScenarioKind.ColumnTypeConversionIncompatible);
+        AssertBrokenBy(step, ScenarioKind.ColumnTypeConversionIncompatible);
     }
 
     [Fact]
     public async Task Decimal_scale_increase_that_drops_integer_digits_is_exercised()
     {
-        var result = await RunAsync<NarrowingContext>("20260101000003_IncreaseAmountScale", o => new(o));
+        var step = await RunAsync<NarrowingContext>("20260101000003_IncreaseAmountScale", o => new(o));
 
-        AssertBrokenByAdversary(result, AdversaryScenarioKind.DecimalPrecisionOverflow);
+        AssertBrokenBy(step, ScenarioKind.DecimalPrecisionOverflow);
     }
 
     [Fact]
     public async Task Filtered_unique_index_on_nullable_column_is_exercised()
     {
-        var result = await RunAsync<FilteredUniqueContext>("20260101000002_AddUniqueUserEmail", o => new(o));
+        var step = await RunAsync<FilteredUniqueContext>("20260101000002_AddUniqueUserEmail", o => new(o));
 
-        AssertBrokenByAdversary(result, AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint);
+        AssertBrokenBy(step, ScenarioKind.DuplicateUniqueIndexOrConstraint);
     }
 
     [Fact]
     public async Task Filtered_unique_index_on_optional_foreign_key_is_exercised()
     {
         // N-1 already has the filtered unique index on Email, so the copies also need different emails.
-        var result = await RunAsync<FilteredUniqueContext>("20260101000003_AddUniqueUserProfile", o => new(o));
+        var step = await RunAsync<FilteredUniqueContext>("20260101000003_AddUniqueUserProfile", o => new(o));
 
-        AssertBrokenByAdversary(result, AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint);
+        AssertBrokenBy(step, ScenarioKind.DuplicateUniqueIndexOrConstraint);
     }
 
     [Fact]
     public async Task Same_column_gets_each_bad_value_in_its_own_row()
     {
         // Name becomes NOT NULL and shorter in one AlterColumn: the NULL and the long value need separate rows.
-        var result = await RunAsync<RequiredAndShorterContext>("20260101000002_MakeNameRequiredAndShorter", o => new(o));
+        var step = await RunAsync<RequiredAndShorterContext>("20260101000002_MakeNameRequiredAndShorter", o => new(o));
 
-        AssertBrokenByAdversary(result, AdversaryScenarioKind.NonNullableColumnWithNull);
-        AssertBrokenByAdversary(result, AdversaryScenarioKind.MaxLengthExceededAfterShrink);
-        Assert.Contains(result.SqlExecuted, sql => sql.StartsWith("UPDATE TOP (1) [dbo].[People] SET [Name] = NULL", StringComparison.Ordinal));
-        Assert.Contains(result.SqlExecuted, sql => sql.StartsWith("INSERT INTO [dbo].[People]", StringComparison.Ordinal) && sql.Contains("REPLICATE", StringComparison.Ordinal));
+        Assert.Equal(MigrationStepOutcome.Failed, step.Outcome);
+        Assert.All(step.Scenarios, s => Assert.Equal(ScenarioStatus.Planted, s.Status));
+        Assert.NotEmpty(step.FailingScenarios);
+        Assert.Contains(step.SqlExecuted, sql => sql.StartsWith("UPDATE TOP (1) [dbo].[People] SET [Name] = NULL", StringComparison.Ordinal));
+        Assert.Contains(step.SqlExecuted, sql => sql.StartsWith("INSERT INTO [dbo].[People]", StringComparison.Ordinal) && sql.Contains("REPLICATE", StringComparison.Ordinal));
     }
 
     [Fact]
     public async Task Table_that_rejects_seed_rows_is_reported_instead_of_aborting_the_run()
     {
         // A CHECK constraint rejects the generated Status value, so Tickets gets no row at all.
-        var steps = await MigrationAdversaryRunner.RunAllAsync(
-            new MigrationAdversaryBatchOptions { CreateContext = () => new CheckedStatusContext(Options<CheckedStatusContext>()) },
-            TestContext.Current.CancellationToken);
+        var report = await MigrationTestRunner.RunAllAsync(Options<CheckedStatusContext>(o => new(o)), Ct);
 
-        Assert.Equal(2, steps.Count);
-        var result = steps[1].Result;
-        Assert.True(result.MigrationSucceeded, result.FailureSummary);
-        Assert.Contains(result.Warnings, w => w.StartsWith("No baseline row in dbo.Tickets", StringComparison.Ordinal));
+        Assert.Equal(2, report.Steps.Count);
+        var step = report.Steps[1];
+        Assert.Equal(MigrationStepOutcome.Passed, step.Outcome);
+        Assert.True(report.Succeeded, report.ToString());
+        Assert.Contains(step.Warnings, w => w.StartsWith("No baseline row in dbo.Tickets", StringComparison.Ordinal));
 
-        var scenario = Assert.Single(result.PlannedScenarios);
-        Assert.True(scenario.Skipped);
-        Assert.StartsWith("Not seeded:", scenario.SkipReason);
-        Assert.Contains("CK_Tickets_Status", scenario.SkipReason);
+        var scenario = Assert.Single(step.Scenarios);
+        Assert.Equal(ScenarioStatus.NotSeeded, scenario.Status);
+        Assert.Contains("CK_Tickets_Status", scenario.Reason);
+        Assert.Contains("Not seeded (not tested):", step.Summary, StringComparison.Ordinal);
     }
 
-    private static DbContextOptions<TContext> Options<TContext>()
-        where TContext : DbContext =>
-        new DbContextOptionsBuilder<TContext>()
+    [Fact]
+    public async Task RequireAllScenariosSeeded_fails_a_step_with_unseeded_scenarios()
+    {
+        var options = Options<CheckedStatusContext>(o => new(o));
+        var strict = new MigrationTestOptions { CreateContext = options.CreateContext, RequireAllScenariosSeeded = true };
+
+        var report = await MigrationTestRunner.RunAllAsync(strict, Ct);
+
+        Assert.Equal(MigrationStepOutcome.Passed, report.Steps[1].Outcome);
+        Assert.False(report.Steps[1].Succeeded);
+        Assert.False(report.Succeeded);
+        Assert.Throws<MigrationTestException>(report.ThrowIfFailed);
+    }
+
+    [Fact]
+    public async Task Broken_earlier_migration_is_an_error_for_the_next_step_not_an_exception()
+    {
+        var report = await MigrationTestRunner.RunAllAsync(Options<BrokenFirstContext>(o => new(o)), Ct);
+
+        Assert.Equal([MigrationStepOutcome.Failed, MigrationStepOutcome.Error], report.Steps.Select(static s => s.Outcome));
+        Assert.Contains("No scenarios were planted", report.Steps[0].Summary, StringComparison.Ordinal);
+        Assert.Contains("Migrating an empty database to the previous migration", report.Steps[1].Summary, StringComparison.Ordinal);
+        Assert.Contains("SQL Server error 50000", report.Steps[1].Summary, StringComparison.Ordinal);
+    }
+
+    private static MigrationTestOptions Options<TContext>(Func<DbContextOptions<TContext>, TContext> create)
+        where TContext : DbContext
+    {
+        var options = new DbContextOptionsBuilder<TContext>()
             .UseSqlServer(TestSqlServerConfig.TestRunConnectionString)
             // Hand-written migrations have no model snapshot to compare against.
             .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
             .Options;
-
-    private static Task<MigrationAdversaryResult> RunAsync<TContext>(
-        string targetMigrationId,
-        Func<DbContextOptions<TContext>, TContext> create)
-        where TContext : DbContext
-    {
-        var options = Options<TContext>();
-        return MigrationAdversaryRunner.RunAsync(
-            new MigrationAdversaryOptions
-            {
-                CreateContext = () => create(options),
-                TargetMigrationId = targetMigrationId
-            },
-            TestContext.Current.CancellationToken);
+        return new MigrationTestOptions { CreateContext = () => create(options) };
     }
 
-    private static void AssertBrokenByAdversary(MigrationAdversaryResult result, AdversaryScenarioKind expectedKind)
-    {
-        string planned = string.Join(
-            ", ",
-            result.PlannedScenarios.Select(static s => $"[{s.Kind}]{(s.Skipped ? $" skipped: {s.SkipReason}" : "")}"));
+    private static Task<MigrationStepResult> RunAsync<TContext>(
+        string migrationId,
+        Func<DbContextOptions<TContext>, TContext> create)
+        where TContext : DbContext
+        => MigrationTestRunner.RunAsync(Options(create), migrationId, Ct);
 
-        Assert.False(
-            result.MigrationSucceeded,
-            $"Migration passed, but the adversarial data should have broken it. Planned: {(planned.Length == 0 ? "none" : planned)}");
-        Assert.Contains(result.PlannedScenarios, s => s.Kind == expectedKind && !s.Skipped);
+    private static void AssertBrokenBy(MigrationStepResult step, ScenarioKind expectedKind)
+    {
+        Assert.True(step.Outcome == MigrationStepOutcome.Failed, $"Expected the planted data to break the migration.\n{step.Summary}");
+        Assert.Contains(step.Scenarios, s => s.Kind == expectedKind && s.Status == ScenarioStatus.Planted);
+        Assert.True(step.FailingScenarios.Any(s => s.Kind == expectedKind), $"Expected the failure to be matched to {expectedKind}.\n{step.Summary}");
     }
 }

@@ -6,8 +6,8 @@ namespace MigrationTester.Seeding;
 
 internal sealed class SeedResult
 {
-    /// <summary>The planned scenarios, in order; those that could not be planted are marked skipped.</summary>
-    public required IReadOnlyList<AdversaryScenario> Scenarios { get; init; }
+    /// <summary>The planned scenarios, in order; those that could not be planted are marked <see cref="ScenarioStatus.NotSeeded"/>.</summary>
+    public required IReadOnlyList<MigrationScenario> Scenarios { get; init; }
 
     /// <summary>Statements that ran successfully, in order.</summary>
     public required IReadOnlyList<string> SqlExecuted { get; init; }
@@ -24,7 +24,7 @@ internal static class AdversarySeeder
     public static async Task<SeedResult> SeedAsync(
         DbConnection connection,
         RelationalSchemaModel schema,
-        IReadOnlyList<AdversaryScenario> scenarios,
+        IReadOnlyList<MigrationScenario> scenarios,
         CancellationToken cancellationToken)
     {
         var sqlLog = new List<string>();
@@ -50,11 +50,11 @@ internal static class AdversarySeeder
 
         // Single-row mutations first, so the duplicates copied afterwards keep identical keys.
         var order = Enumerable.Range(0, scenarios.Count)
-            .OrderBy(i => scenarios[i].Kind == AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint ? 1 : 0);
+            .OrderBy(i => scenarios[i].Kind == ScenarioKind.DuplicateUniqueIndexOrConstraint ? 1 : 0);
         foreach (int i in order)
         {
             var scenario = scenarios[i];
-            if (scenario.Skipped)
+            if (scenario.Status != ScenarioStatus.Planted)
             {
                 continue;
             }
@@ -62,13 +62,13 @@ internal static class AdversarySeeder
             string? failure = await PlantAsync(scenario).ConfigureAwait(false);
             if (failure is not null)
             {
-                outcome[i] = scenario with { Skipped = true, SkipReason = $"Not seeded: {failure}" };
+                outcome[i] = scenario.NotSeeded(failure);
             }
         }
 
         return new SeedResult { Scenarios = outcome, SqlExecuted = sqlLog, Warnings = warnings };
 
-        async Task<string?> PlantAsync(AdversaryScenario scenario)
+        async Task<string?> PlantAsync(MigrationScenario scenario)
         {
             if (schema.FindTable(scenario.Schema, scenario.Table) is not { } table)
             {
@@ -82,7 +82,7 @@ internal static class AdversarySeeder
 
             SeedSql statement;
             IReadOnlyList<ColumnValue> planted = [];
-            if (scenario.Kind == AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint)
+            if (scenario.Kind == ScenarioKind.DuplicateUniqueIndexOrConstraint)
             {
                 if (scenario.NotNullFilterColumns.Count == 0)
                 {

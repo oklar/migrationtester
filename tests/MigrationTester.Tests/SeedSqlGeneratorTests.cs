@@ -215,7 +215,7 @@ public sealed class SeedSqlGeneratorTests
             Columns = [Col("Id", "int", identity: true), Col("Email", "nvarchar(200)", nullable: true), Col("ProfileId", "int", nullable: true)],
             ForeignKeys = [ForeignKey("ProfileId", "Profiles")]
         };
-        var scenario = Scenario(AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint, "ProfileId") with
+        var scenario = Scenario(ScenarioKind.DuplicateUniqueIndexOrConstraint, "ProfileId") with
         {
             NotNullFilterColumns = ["Email", "ProfileId"]
         };
@@ -239,7 +239,7 @@ public sealed class SeedSqlGeneratorTests
     {
         var table = Table("Items", Col("Name", "nvarchar(50)", nullable: true));
 
-        Assert.True(SeedSqlGenerator.TryGetBadValues(Scenario(AdversaryScenarioKind.NonNullableColumnWithNull, "Name"), table, out var values, out _));
+        Assert.True(SeedSqlGenerator.TryGetBadValues(Scenario(ScenarioKind.NonNullableColumnWithNull, "Name"), table, out var values, out _));
         Assert.Equal([new ColumnValue("Name", "NULL")], values);
     }
 
@@ -248,7 +248,7 @@ public sealed class SeedSqlGeneratorTests
     {
         var table = Table("Items", Col("Name", "nvarchar(50)"));
 
-        Assert.False(SeedSqlGenerator.TryGetBadValues(Scenario(AdversaryScenarioKind.NonNullableColumnWithNull, "Name"), table, out _, out string? failure));
+        Assert.False(SeedSqlGenerator.TryGetBadValues(Scenario(ScenarioKind.NonNullableColumnWithNull, "Name"), table, out _, out string? failure));
         Assert.Contains("already NOT NULL", failure);
     }
 
@@ -256,7 +256,7 @@ public sealed class SeedSqlGeneratorTests
     public void TryGetBadValues_long_value_is_one_longer_than_new_max_and_fits_old_column()
     {
         var table = Table("Products", Col("Code", "nvarchar(100)"));
-        var scenario = Scenario(AdversaryScenarioKind.MaxLengthExceededAfterShrink, "Code") with { NewMaxLength = 60 };
+        var scenario = Scenario(ScenarioKind.MaxLengthExceededAfterShrink, "Code") with { NewMaxLength = 60 };
 
         Assert.True(SeedSqlGenerator.TryGetBadValues(scenario, table, out var values, out _));
         Assert.Equal("REPLICATE(CAST(N'x' AS nvarchar(max)), 61)", Assert.Single(values).Value);
@@ -266,7 +266,7 @@ public sealed class SeedSqlGeneratorTests
     public void TryGetBadValues_long_value_fails_when_old_column_is_not_longer()
     {
         var table = Table("Products", Col("Code", "nvarchar(30)"));
-        var scenario = Scenario(AdversaryScenarioKind.MaxLengthExceededAfterShrink, "Code") with { NewMaxLength = 60 };
+        var scenario = Scenario(ScenarioKind.MaxLengthExceededAfterShrink, "Code") with { NewMaxLength = 60 };
 
         Assert.False(SeedSqlGenerator.TryGetBadValues(scenario, table, out _, out string? failure));
         Assert.Contains("cannot hold more than 60", failure);
@@ -281,7 +281,7 @@ public sealed class SeedSqlGeneratorTests
     {
         var table = Table("Orders", Col("CustomerId", type));
 
-        Assert.True(SeedSqlGenerator.TryGetBadValues(Scenario(AdversaryScenarioKind.ForeignKeyOrphan, "CustomerId"), table, out var values, out _));
+        Assert.True(SeedSqlGenerator.TryGetBadValues(Scenario(ScenarioKind.ForeignKeyOrphan, "CustomerId"), table, out var values, out _));
         Assert.Equal(expected, Assert.Single(values).Value);
     }
 
@@ -289,7 +289,7 @@ public sealed class SeedSqlGeneratorTests
     public void TryGetBadValues_conversion_uses_the_planned_value()
     {
         var table = Table("Measurements", Col("Quantity", "int"));
-        var scenario = Scenario(AdversaryScenarioKind.ColumnTypeConversionIncompatible, "Quantity") with { SeedValue = "32768" };
+        var scenario = Scenario(ScenarioKind.ColumnTypeConversionIncompatible, "Quantity") with { SeedValue = "32768" };
 
         Assert.True(SeedSqlGenerator.TryGetBadValues(scenario, table, out var values, out _));
         Assert.Equal([new ColumnValue("Quantity", "32768")], values);
@@ -300,10 +300,10 @@ public sealed class SeedSqlGeneratorTests
     {
         var table = Table("Orders", Col("Id", "int", identity: true));
 
-        Assert.True(SeedSqlGenerator.TryGetBadValues(Scenario(AdversaryScenarioKind.NotNullColumnAddedWithoutDefault, "Status"), table, out var values, out _));
+        Assert.True(SeedSqlGenerator.TryGetBadValues(Scenario(ScenarioKind.NotNullColumnAddedWithoutDefault, "Status"), table, out var values, out _));
         Assert.Empty(values);
     }
 
-    private static AdversaryScenario Scenario(AdversaryScenarioKind kind, string column) =>
+    private static MigrationScenario Scenario(ScenarioKind kind, string column) =>
         new() { Kind = kind, Name = "test", Table = "T", Columns = [column] };
 }

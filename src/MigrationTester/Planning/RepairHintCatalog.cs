@@ -5,25 +5,25 @@ namespace MigrationTester.Planning;
 /// <summary>
 /// SQL Server-oriented repair patterns for failed migrations.
 /// </summary>
-public static class RepairHintCatalog
+internal static class RepairHintCatalog
 {
-    public static string ForScenario(AdversaryScenario scenario)
+    public static string ForScenario(MigrationScenario scenario)
     {
         return scenario.Kind switch
         {
-            AdversaryScenarioKind.DuplicateUniqueIndexOrConstraint => DuplicateUnique(scenario),
-            AdversaryScenarioKind.ForeignKeyOrphan => ForeignKeyOrphan(scenario),
-            AdversaryScenarioKind.NonNullableColumnWithNull => NonNullable(scenario),
-            AdversaryScenarioKind.MaxLengthExceededAfterShrink => MaxLength(scenario),
-            AdversaryScenarioKind.CheckConstraintViolation => Check(scenario),
-            AdversaryScenarioKind.NotNullColumnAddedWithoutDefault => NotNullAddColumn(scenario),
-            AdversaryScenarioKind.ColumnTypeConversionIncompatible => TypeConversion(scenario),
-            AdversaryScenarioKind.DecimalPrecisionOverflow => PrecisionOverflow(scenario),
+            ScenarioKind.DuplicateUniqueIndexOrConstraint => DuplicateUnique(scenario),
+            ScenarioKind.ForeignKeyOrphan => ForeignKeyOrphan(scenario),
+            ScenarioKind.NonNullableColumnWithNull => NonNullable(scenario),
+            ScenarioKind.MaxLengthExceededAfterShrink => MaxLength(scenario),
+            ScenarioKind.CheckConstraintViolation => Check(scenario),
+            ScenarioKind.NotNullColumnAddedWithoutDefault => NotNullAddColumn(scenario),
+            ScenarioKind.ColumnTypeConversionIncompatible => TypeConversion(scenario),
+            ScenarioKind.DecimalPrecisionOverflow => PrecisionOverflow(scenario),
             _ => "Review migration and pre-migration data."
         };
     }
 
-    private static string DuplicateUnique(AdversaryScenario s)
+    private static string DuplicateUnique(MigrationScenario s)
     {
         string cols = string.Join(", ", s.Columns.Select(c => SqlDialect.Q(c)));
         string table = SqlDialect.Q(s.Schema, s.Table);
@@ -36,7 +36,7 @@ public static class RepairHintCatalog
             """;
     }
 
-    private static string ForeignKeyOrphan(AdversaryScenario s)
+    private static string ForeignKeyOrphan(MigrationScenario s)
     {
         string dep = SqlDialect.Q(s.Schema, s.Table);
         string principal = s.PrincipalTable is { } p ? SqlDialect.Q(s.PrincipalSchema, p) : "[PrincipalTable]";
@@ -50,7 +50,7 @@ public static class RepairHintCatalog
             """;
     }
 
-    private static string NonNullable(AdversaryScenario s)
+    private static string NonNullable(MigrationScenario s)
     {
         string col = SqlDialect.Q(s.Columns[0]);
         string table = SqlDialect.Q(s.Schema, s.Table);
@@ -60,7 +60,7 @@ public static class RepairHintCatalog
             """;
     }
 
-    private static string MaxLength(AdversaryScenario s)
+    private static string MaxLength(MigrationScenario s)
     {
         string col = SqlDialect.Q(s.Columns[0]);
         string table = SqlDialect.Q(s.Schema, s.Table);
@@ -70,7 +70,7 @@ public static class RepairHintCatalog
             """;
     }
 
-    private static string Check(AdversaryScenario s)
+    private static string Check(MigrationScenario s)
     {
         return """
             -- CHECK constraint: update or delete rows that fail the new predicate.
@@ -79,7 +79,7 @@ public static class RepairHintCatalog
             """;
     }
 
-    private static string NotNullAddColumn(AdversaryScenario s)
+    private static string NotNullAddColumn(MigrationScenario s)
     {
         string col = SqlDialect.Q(s.Columns[0]);
         string table = SqlDialect.Q(s.Schema, s.Table);
@@ -92,7 +92,7 @@ public static class RepairHintCatalog
             """;
     }
 
-    private static string TypeConversion(AdversaryScenario s)
+    private static string TypeConversion(MigrationScenario s)
     {
         string col = SqlDialect.Q(s.Columns[0]);
         string table = SqlDialect.Q(s.Schema, s.Table);
@@ -106,7 +106,7 @@ public static class RepairHintCatalog
             """;
     }
 
-    private static string PrecisionOverflow(AdversaryScenario s)
+    private static string PrecisionOverflow(MigrationScenario s)
     {
         string col = SqlDialect.Q(s.Columns[0]);
         string table = SqlDialect.Q(s.Schema, s.Table);

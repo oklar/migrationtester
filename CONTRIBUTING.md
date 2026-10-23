@@ -58,7 +58,7 @@ Releases are published from GitHub Actions with [nuget.org trusted publishing](h
    - Policy name: anything, e.g. `MigrationTester releases`
    - Package owner: your account
    - Repository owner: `oklar`
-   - Repository: `migrationrepair` (or its new name if you rename it)
+   - Repository: `migrationtester`
    - Workflow file: `release.yml`
    - Environment: leave empty
 3. On GitHub, open the repository → **Settings** → **Secrets and variables** → **Actions** → **Variables** → **New repository variable**: name `NUGET_USER`, value your nuget.org username.

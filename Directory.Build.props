@@ -18,8 +18,8 @@
   <PropertyGroup>
     <Authors>Olav</Authors>
     <Copyright>Copyright (c) 2026 Olav</Copyright>
-    <PackageProjectUrl>https://github.com/oklar/migrationrepair</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/oklar/migrationrepair</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/oklar/migrationtester</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/oklar/migrationtester</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>

@@ -7,7 +7,7 @@
     <Description>Tests EF Core migrations against SQL Server with data that is valid before each migration but that its Up() may not handle (duplicates, orphan foreign keys, NULLs, over-long or unconvertible values), and reports which change broke with a T-SQL repair hint.</Description>
     <PackageTags>efcore;entity-framework;migrations;testing;sqlserver;integration-testing</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageReleaseNotes>https://github.com/oklar/migrationrepair/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    <PackageReleaseNotes>https://github.com/oklar/migrationtester/blob/main/CHANGELOG.md</PackageReleaseNotes>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 

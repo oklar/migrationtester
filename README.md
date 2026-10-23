@@ -116,6 +116,6 @@ Then use `Server=127.0.0.1,1433;User Id=sa;Password=Your_password1;TrustServerCe
 
 ## More
 
-- [Changelog](https://github.com/oklar/migrationrepair/blob/main/CHANGELOG.md)
-- [Sample project](https://github.com/oklar/migrationrepair/tree/main/examples/MigrationTester.Examples): nine migrations that each break on a different kind of data
-- [Contributing](https://github.com/oklar/migrationrepair/blob/main/CONTRIBUTING.md): building, testing and releasing
+- [Changelog](https://github.com/oklar/migrationtester/blob/main/CHANGELOG.md)
+- [Sample project](https://github.com/oklar/migrationtester/tree/main/examples/MigrationTester.Examples): nine migrations that each break on a different kind of data
+- [Contributing](https://github.com/oklar/migrationtester/blob/main/CONTRIBUTING.md): building, testing and releasing

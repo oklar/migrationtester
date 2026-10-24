@@ -1,117 +1,124 @@
-# MigrationRepair
+# MigrationTester
 
-NuGet library for **migration safety** on **Microsoft SQL Server**: in integration tests, stress each EF Core migration with **schema-aware “bad” data** so you find data-dependent `Up()` failures **before production**. The library migrates to **N−1**, seeds **baseline + adversarial** rows derived from migration **N**’s fluent `Up()` operations, then runs **`Migrate` to N**. Failures include **T-SQL repair hints** (`RepairHintCatalog`).
+[![CI](https://github.com/oklar/migrationtester/actions/workflows/ci.yml/badge.svg)](https://github.com/oklar/migrationtester/actions/workflows/ci.yml)
+[![NuGet](https://img.shields.io/nuget/vpre/MigrationTester)](https://www.nuget.org/packages/MigrationTester)
 
-**Target:** EF Core **10** / **.NET 10** (`Microsoft.EntityFrameworkCore.Relational`). Your test and app projects reference **`Microsoft.EntityFrameworkCore.SqlServer`**.
+Tests EF Core migrations against SQL Server with the kind of data production already has. For each migration N, MigrationTester brings a test database to N−1, plants rows that are valid there but that N's `Up()` may not handle, then runs N. When the migration fails you get the SQL Server error, the planted data it broke on, and a T-SQL repair hint.
 
-## Why use this package?
+**Target:** EF Core 10 / .NET 10, SQL Server. Your test project references `Microsoft.EntityFrameworkCore.SqlServer`, as your app does.
 
-- **Greenfield or long histories:** Whether you have two migrations or fifty, you can **loop the full chain** (or a subset) and see which steps break on realistic dirty data.
-- **Deterministic scenarios:** **unique indexes / primary keys**, **foreign keys**, **nullable → required**, **max-length shrink**, **NOT NULL column without default**, **column type conversion**, **decimal precision overflow**, and **check constraint** guidance (check rows are not auto-generated).
-- **Honest limits:** Operations come from **`MigrationBuilder` fluency only**—`migrationBuilder.Sql(...)` is **flagged**, not parsed (false negatives possible). Introspection targets **`dbo`** user tables.
-
-## Prerequisites
-
-- SQL Server reachable from tests (localhost, Docker, or a dedicated instance) and a login that can **create/drop** the test database.
-- `DbContext` with **`UseSqlServer(...)`** and the same migrations you ship.
-
-## Single migration
-
-```csharp
-var cs = Environment.GetEnvironmentVariable("TEST_SQL") ?? "Server=127.0.0.1,1433;User Id=sa;Password=...;TrustServerCertificate=True";
-var opts = new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(cs + ";Database=MyApp_MigrationAdversary");
-
-var result = await MigrationAdversaryRunner.RunAsync(new MigrationAdversaryOptions
-{
-    CreateContext = () => new AppDbContext(opts.Options),
-    TargetMigrationId = "20240101120000_MyMigration"
-});
-
-Assert.True(result.MigrationSucceeded, result.FailureSummary ?? result.Exception?.Message);
+```bash
+dotnet add package MigrationTester --prerelease
 ```
 
-## Full history (recommended for NuGet consumers)
+## What it plants
+
+| When a migration… | it plants |
+|---|---|
+| adds a unique index, unique constraint or primary key | two rows with the same key (including EF's `IS NOT NULL` filtered indexes) |
+| adds a foreign key | a row pointing at a principal that does not exist |
+| makes a column NOT NULL | a NULL |
+| shrinks a string or binary column | a value one longer than the new maximum |
+| changes a column's type | a value the new type cannot hold: text in a column becoming a number, GUID or date; `32768` in one becoming `smallint`; `10^14` in a `decimal(18,2)` becoming `decimal(18,4)`; a year-1000 date in one becoming `datetime` |
+| adds a NOT NULL column without a default | an existing row |
+
+Every planted row is valid before the migration: foreign keys point at real rows, existing unique keys stay unique, values fit the old column. So a failure points at the migration, not at the test data. The data works across schemas, identity, rowversion, computed and GUID-keyed tables.
+
+## Quick start
 
 ```csharp
-var batch = new MigrationAdversaryBatchOptions
+var options = new MigrationTestOptions
 {
-    CreateContext = () => new AppDbContext(opts.Options)
-    // MigrationIds = null  → every migration from Database.GetMigrations() in order
+    CreateContext = () => new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+        .UseSqlServer("Server=localhost;Database=MyApp;Integrated Security=True;TrustServerCertificate=True")
+        .Options)
 };
 
-var steps = await MigrationAdversaryRunner.RunAllAsync(batch);
-
-Assert.True(
-    MigrationAdversaryRunner.AllStepsSucceeded(steps),
-    MigrationAdversaryRunner.FirstFailedStep(steps)?.Result.FailureSummary);
+var report = await MigrationTestRunner.RunAllAsync(options);
+report.ThrowIfFailed();
 ```
 
-- **Subset (canonical order):** set `MigrationIds` to filter; order follows **EF apply order**, not your list order.
-- **CI shard:** use **`RunRangeAsync(batch, fromId, toId)`** on contiguous segments (**cannot** be combined with `MigrationIds`). Each step is an isolated run (`EnsureDeleted`, seed, migrate), same as calling **`RunAsync`** per id.
+`ThrowIfFailed()` throws a `MigrationTestException` whose message is the full report, so any test framework shows it:
 
-## Integration test recipe (Docker SQL Server)
+```text
+FAILED 20240301090000_AddOrderStatus: Up() failed on data that is valid before it runs.
+SQL Server error 4901: ALTER TABLE only allows columns to be added that can contain nulls, or have a DEFAULT definition specified, ...
 
-No Testcontainers dependency in this package; point **`UseSqlServer`** at any instance. Example: run SQL Server in Docker, map **1433**, then:
+Broke on:
+ - [NotNullColumnAddedWithoutDefault] NOT NULL column 'Status' added to 'Orders' without a default value
 
-```bash
-docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=Your_password1" -p 1433:1433 --name sqladv -d mcr.microsoft.com/mssql/server:2022-latest
+Repair hint:
+-- Column [Status] is added as NOT NULL without a default value.
+-- Either add a DEFAULT in the migration, or add it as nullable, UPDATE it, then make it NOT NULL.
 ```
+
+### One test per migration
 
 ```csharp
-const string DockerSa = "Server=127.0.0.1,1433;User Id=sa;Password=Your_password1;TrustServerCertificate=True;Database=MigrationRepair_Test";
+public static TheoryData<string> Migrations => new(MigrationTestRunner.GetMigrationIds(Options.CreateContext));
 
-var batch = new MigrationAdversaryBatchOptions
+[Theory]
+[MemberData(nameof(Migrations))]
+public async Task Migration_handles_existing_data(string migrationId)
 {
-    CreateContext = () => new AppDbContext(
-        new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(DockerSa).Options)
-};
-
-var steps = await MigrationAdversaryRunner.RunAllAsync(batch);
-Assert.True(MigrationAdversaryRunner.AllStepsSucceeded(steps));
+    var step = await MigrationTestRunner.RunAsync(Options, migrationId);
+    step.ThrowIfFailed();
+}
 ```
 
-Use **Windows auth** on dev (`Integrated Security=True`) when you prefer SSMS-style local instances; override with env vars in CI (see repo `TestSqlServerConfig`).
+## The test database
 
-## API summary
+By default the runner never touches the database in your connection string. Each run creates a throwaway database named after it (`MyApp_mt_1a2b3c4d`) and drops it when the run ends. The connection string only needs a server and a login that can create and drop databases.
 
-| Member | Purpose |
-|--------|---------|
-| `RunAsync(MigrationAdversaryOptions)` | One migration N with fresh DB |
-| `RunAllAsync(MigrationAdversaryBatchOptions)` | All migrations, or filtered by `MigrationIds` |
-| `RunRangeAsync(batch, from, to)` | Inclusive slice of apply order (sharding) |
-| `MigrationStepResult` | `MigrationId`, `Result`, `Duration` per step |
-| `AllStepsSucceeded` / `FirstFailedStep` | Test helpers |
+A run migrates that database forward once. For each migration it plants the data and runs the migration inside a transaction that is rolled back, then applies the migration to the clean database for the next step. That is about two migration runs per migration, with the same starting state as rebuilding from empty every time; on the sample's 9 migrations it takes 0.65 s instead of 5 s. Migrations with statements that cannot run in a transaction (`Sql(..., suppressTransaction: true)`, `ALTER DATABASE`) are planted and run for real, and the database is rebuilt afterwards.
 
-## Tests in this repo
+| Option | Effect |
+|---|---|
+| `DatabaseName` | Use this exact database instead of a throwaway one, e.g. on a server where creating databases is slow. It is dropped and recreated, so only name a database you are happy to lose. |
+| `KeepDatabase` | Leave the database in place after the run, holding the last migration's planted data and result; `report.DatabaseName` tells you which one. |
+| `RebuildDatabaseForEachMigration` | Recreate the database from empty and plant data for real for every migration. Slower; for when you suspect the transactional run behaves differently. |
 
-The test project uses **xUnit.net v3** (`xunit.v3`, executable output). SQL integration tests are in collection **`SqlServer integration`**: at the **start** of each `dotnet test` run the **`MigrationRepair_Test`** database is **dropped** (so a previous SSMS session does not block a clean run); after tests finish the database **stays** as the last test left it until the **next** run.
+## Reading the results
+
+`RunAllAsync` and `RunRangeAsync` return a `MigrationTestReport`; `RunAsync` returns one `MigrationStepResult`.
+
+| Member | Meaning |
+|---|---|
+| `Outcome` | `Passed`, `Failed` (the migration threw on the planted data) or `Error` (the step could not be set up, e.g. an earlier migration fails on an empty database) |
+| `Scenarios` | Every case derived from `Up()`, each with a `Status`: `Planted`, `NotApplicable` (it cannot fail, e.g. the table is new) or `NotSeeded` (it could fail but could not be planted; see `Reason`) |
+| `FailingScenarios` | The planted cases the SQL Server error matches |
+| `Summary` / `ToString()` | The readable text shown above |
+| `Warnings` | E.g. `migrationBuilder.Sql(...)` present, or a table that got no row |
+
+Set `RequireAllScenariosSeeded = true` to also fail migrations with `NotSeeded` cases, so nothing passes untested.
+
+## Choosing migrations
+
+| Call | Tests |
+|---|---|
+| `RunAllAsync(options)` | every migration, or those in `options.MigrationIds`, in EF apply order |
+| `RunRangeAsync(options, from, to)` | an inclusive slice of apply order, e.g. to split a long history across CI jobs |
+| `RunAsync(options, id)` | one migration; `id` can be the full id or the migration name |
+
+## SQL Server in Docker
 
 ```bash
-dotnet build MigrationRepair.slnx
-dotnet test MigrationRepair.Tests/MigrationRepair.Tests.csproj
+docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=Your_password1" -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
 ```
 
-The **examples** project (`examples/MigrationRepair.Examples/`) consumes MigrationRepair as a NuGet package. To build it locally, pack the library first:
-
-```bash
-dotnet pack MigrationRepair.csproj -c Release
-dotnet build examples/MigrationRepair.Examples/MigrationRepair.Examples.csproj
-```
-
-Defaults: **`TestSqlServerConfig`** (`MIGRATION_REPAIR_SQL_TEST`, **`MIGRATION_REPAIR_SQL_DESIGN`** for `dotnet ef`).
+Then use `Server=127.0.0.1,1433;User Id=sa;Password=Your_password1;TrustServerCertificate=True` as the connection string.
 
 ## Limitations
 
-- **`migrationBuilder.Sql`**: not analyzed; **`ContainsRawSqlInMigration`** and warnings only.
-- **Not exhaustive “any data”**: deterministic scenarios only; not full property-based generation.
-- **SQL Server–only** implementation (provider alignment: test against the same engine as production migrations).
-- **First migration**: no N−1 tables; uses an empty schema model until **`Migrate(N)`** creates the database.
-- **Custom `Up()` ordering** or data-fix steps can still yield **false negatives**.
+- **SQL Server only.** Other EF Core providers need their own catalog queries, seed SQL and error handling.
+- **Only `Up()` is tested**, and only operations built with `MigrationBuilder`; what `migrationBuilder.Sql(...)` does is not analyzed (flagged with a warning and `ContainsRawSql`).
+- **Deterministic cases, not random data.** A migration can still fail on data nobody thought of.
+- **Seeding** inserts one ordinary row per table and derives the bad rows from it. When SQL Server rejects a seed statement (an existing CHECK constraint, a trigger, a column type with no generator, a required self-referencing foreign key), those cases become `NotSeeded` with the reason, and the run carries on. Filtered unique indexes are seeded only when the filter is `IS NOT NULL` terms; new CHECK constraints are never seeded.
+- **Silent data loss** (e.g. `datetime2` → `date`, scale reduction, `nvarchar` → `varchar`) does not fail a migration, so it is not reported.
+- **Seed values avoid HasData ids** by starting identity counters and integer keys at 1,000,000 (30,000 for `smallint`, 100 for `tinyint`). Seed data with ids above that can still collide.
 
-## Nested test project and example
+## More
 
-`MigrationRepair.Tests/` and **`examples/MigrationRepair.Examples/`** are excluded from the main library’s compile glob in `MigrationRepair.csproj`. The **MigrationRepair.Examples** project is a NuGet consumer sample (SQL Server, EF migrations, adversary demo tests); see **`examples/MigrationRepair.Examples/README.md`**. It does not affect published **NuGet** package size.
-
-## Local tooling
-
-`dotnet-tools.json` pins **dotnet-ef** 10.0.0 for sample migrations.
+- [Changelog](https://github.com/oklar/migrationtester/blob/main/CHANGELOG.md)
+- [Sample project](https://github.com/oklar/migrationtester/tree/main/examples/MigrationTester.Examples): nine migrations that each break on a different kind of data
+- [Contributing](https://github.com/oklar/migrationtester/blob/main/CONTRIBUTING.md): building, testing and releasing

@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: MigrationTester_Ci1
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P MigrationTester_Ci1 -Q 'SELECT 1' -b"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+          --health-start-period 20s
+
+    env:
+      # Throwaway CI container. The database names only name the throwaway test databases.
+      MIGRATION_TESTER_SQL_TEST: Server=localhost,1433;Database=MigrationTester_Test;User Id=sa;Password=MigrationTester_Ci1;TrustServerCertificate=True;MultipleActiveResultSets=True
+      MIGRATION_TESTER_SCENARIO_TEST: Server=localhost,1433;Database=MigrationTesterExamples_Test;User Id=sa;Password=MigrationTester_Ci1;TrustServerCertificate=True;MultipleActiveResultSets=True
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore MigrationTester.slnx
+
+      - name: Build
+        run: dotnet build MigrationTester.slnx -c Release --no-restore
+
+      - name: Test
+        run: dotnet test MigrationTester.slnx -c Release --no-build
+
+      - name: Pack
+        run: dotnet pack src/MigrationTester -c Release --no-build
+
+      - name: Build examples against the packed nupkg
+        run: dotnet build examples/MigrationTester.Examples -c Release -p:UseMigrationTesterPackage=true
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nupkg
+          path: artifacts/packages/*.nupkg
+          if-no-files-found: error

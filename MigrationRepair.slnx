@@ -1,5 +1,0 @@
-<Solution>
-  <Project Path="MigrationRepair.csproj" />
-  <Project Path="MigrationRepair.Tests\MigrationRepair.Tests.csproj" />
-  <Project Path="examples\MigrationRepair.Examples\MigrationRepair.Examples.csproj" />
-</Solution>

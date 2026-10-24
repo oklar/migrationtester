@@ -4,7 +4,9 @@ All notable changes to MigrationTester. Versions follow [Semantic Versioning](ht
 
 ## [Unreleased]
 
-First release, planned as `0.1.0-preview.1`.
+## [0.1.0-preview.1] - 2026-10-24
+
+First preview release.
 
 ### Added
 
@@ -26,3 +28,6 @@ First release, planned as `0.1.0-preview.1`.
 - A throwaway test database per run, dropped afterwards; `DatabaseName` and `KeepDatabase` to opt out.
 - Each migration runs on its planted data in a transaction that is rolled back, so a run costs about two migration runs per migration; `RebuildDatabaseForEachMigration` recreates the database for every migration instead.
 - `RequireAllScenariosSeeded` to fail migrations whose scenarios could not all be planted.
+
+[Unreleased]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.1...HEAD
+[0.1.0-preview.1]: https://github.com/oklar/migrationtester/releases/tag/v0.1.0-preview.1

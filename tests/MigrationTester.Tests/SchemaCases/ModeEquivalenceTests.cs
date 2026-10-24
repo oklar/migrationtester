@@ -16,6 +16,8 @@ public sealed class ModeEquivalenceTests
         ["TestDbContext"] = () => new TestDbContext(Build<TestDbContext>()),
         ["RowVersion"] = () => new RowVersionContext(Build<RowVersionContext>()),
         ["GuidKey"] = () => new GuidKeyContext(Build<GuidKeyContext>()),
+        ["ComputedColumn"] = () => new ComputedColumnContext(Build<ComputedColumnContext>()),
+        ["TemporalTable"] = () => new TemporalTableContext(Build<TemporalTableContext>()),
         ["ShrinkLength"] = () => new ShrinkLengthContext(Build<ShrinkLengthContext>()),
         ["CustomSchema"] = () => new CustomSchemaContext(Build<CustomSchemaContext>()),
         ["RequiredForeignKey"] = () => new RequiredForeignKeyContext(Build<RequiredForeignKeyContext>()),

@@ -63,8 +63,21 @@ internal static class FailureAnalyzer
             _ => null
         };
 
+        // Scenarios hold N-1 column names; the message uses the names the failing statement uses, which differ
+        // after a rename earlier in the same migration.
+        string[] columnsInOperation = scenario.SourceOperation switch
+        {
+            CreateIndexOperation i => i.Columns,
+            AddForeignKeyOperation f => f.Columns,
+            AddUniqueConstraintOperation u => u.Columns,
+            AddPrimaryKeyOperation p => p.Columns,
+            AlterColumnOperation a => [a.Name],
+            AddColumnOperation c => [c.Name],
+            _ => []
+        };
+
         return (!string.IsNullOrEmpty(objectName) && message.Contains(objectName, StringComparison.OrdinalIgnoreCase))
-            || scenario.Columns.Any(c => message.Contains($"'{c}'", StringComparison.OrdinalIgnoreCase));
+            || scenario.Columns.Concat(columnsInOperation).Any(c => message.Contains($"'{c}'", StringComparison.OrdinalIgnoreCase));
     }
 
     private static SqlException? FindSqlException(Exception exception)

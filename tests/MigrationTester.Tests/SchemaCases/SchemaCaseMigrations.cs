@@ -460,3 +460,65 @@ public sealed class AddUniqueTicketCode : Migration
     protected override void Up(MigrationBuilder migrationBuilder) =>
         migrationBuilder.CreateIndex("IX_Tickets_Code", "Tickets", "Code", unique: true);
 }
+
+public sealed class RenameContext(DbContextOptions<RenameContext> options) : DbContext(options);
+
+[DbContext(typeof(RenameContext))]
+[Migration("20260101000001_CreateMembers")]
+public sealed class CreateMembers : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.CreateTable(
+            name: "Members",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                Name = table.Column<string>("nvarchar(100)", maxLength: 100, nullable: true),
+                Nickname = table.Column<string>("nvarchar(50)", maxLength: 50, nullable: true)
+            },
+            constraints: table => table.PrimaryKey("PK_Members", x => x.Id));
+}
+
+// What EF scaffolds for renaming a nullable property and making it required. Nickname also becomes required,
+// so the failure has to be matched to the right one of two NOT NULL scenarios by the column's new name.
+[DbContext(typeof(RenameContext))]
+[Migration("20260101000002_RenameMemberNameAndRequireIt")]
+public sealed class RenameMemberNameAndRequireIt : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.RenameColumn(name: "Name", table: "Members", newName: "DisplayName");
+        migrationBuilder.AlterColumn<string>(
+            name: "DisplayName",
+            table: "Members",
+            type: "nvarchar(100)",
+            maxLength: 100,
+            nullable: false,
+            oldClrType: typeof(string),
+            oldType: "nvarchar(100)",
+            oldMaxLength: 100,
+            oldNullable: true);
+        migrationBuilder.AlterColumn<string>(
+            name: "Nickname",
+            table: "Members",
+            type: "nvarchar(50)",
+            maxLength: 50,
+            nullable: false,
+            oldClrType: typeof(string),
+            oldType: "nvarchar(50)",
+            oldMaxLength: 50,
+            oldNullable: true);
+    }
+}
+
+[DbContext(typeof(RenameContext))]
+[Migration("20260101000003_MoveMembersToCrmWithUniqueName")]
+public sealed class MoveMembersToCrmWithUniqueName : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.EnsureSchema("crm");
+        migrationBuilder.RenameTable(name: "Members", newName: "Subscribers", newSchema: "crm");
+        migrationBuilder.CreateIndex("IX_Subscribers_DisplayName", "Subscribers", "DisplayName", schema: "crm", unique: true);
+    }
+}

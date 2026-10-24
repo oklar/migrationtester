@@ -120,6 +120,33 @@ public sealed class SchemaCaseTests
     }
 
     [Fact]
+    public async Task Column_renamed_then_made_required_is_planted_under_its_N_minus_1_name()
+    {
+        var step = await RunAsync<RenameContext>("20260101000002_RenameMemberNameAndRequireIt", o => new(o));
+
+        AssertBrokenBy(step, ScenarioKind.NonNullableColumnWithNull);
+        Assert.All(step.Scenarios, s => Assert.Equal(ScenarioStatus.Planted, s.Status));
+        Assert.Contains(step.SqlExecuted, sql => sql.StartsWith("UPDATE TOP (1) [dbo].[Members] SET [Name] = NULL", StringComparison.Ordinal));
+
+        // The error names DisplayName, which the scenario knows as Name; Nickname is planted too but not named.
+        var failing = Assert.Single(step.FailingScenarios);
+        Assert.Equal(["Name"], failing.Columns);
+        Assert.Contains("'DisplayName' was 'Name'", failing.Name, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Table_renamed_into_another_schema_then_given_unique_index_is_planted_under_its_N_minus_1_name()
+    {
+        var step = await RunAsync<RenameContext>("20260101000003_MoveMembersToCrmWithUniqueName", o => new(o));
+
+        AssertBrokenBy(step, ScenarioKind.DuplicateUniqueIndexOrConstraint);
+        var scenario = Assert.Single(step.Scenarios);
+        Assert.Equal("dbo", scenario.Schema);
+        Assert.Equal("Members", scenario.Table);
+        Assert.Contains(step.SqlExecuted, sql => sql.StartsWith("INSERT INTO [dbo].[Members]", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Table_that_rejects_seed_rows_is_reported_instead_of_aborting_the_run()
     {
         // A CHECK constraint rejects the generated Status value, so Tickets gets no row at all.

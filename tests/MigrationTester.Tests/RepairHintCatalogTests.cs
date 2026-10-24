@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using MigrationTester.Planning;
 using Xunit;
 
@@ -92,6 +93,25 @@ public sealed class RepairHintCatalogTests
         string hint = RepairHintCatalog.ForScenario(scenario);
 
         Assert.Contains("CHECK", hint);
+    }
+
+    [Fact]
+    public void ForScenario_check_constraint_finds_the_rows_that_fail_its_predicate()
+    {
+        var scenario = new MigrationScenario
+        {
+            Kind = ScenarioKind.CheckConstraintViolation,
+            Name = "test",
+            Schema = "dbo",
+            Table = "Products",
+            Columns = ["Price"],
+            SourceOperation = new AddCheckConstraintOperation { Name = "CK_Products_PositivePrice", Table = "Products", Sql = "[Price] > 0" }
+        };
+
+        string hint = RepairHintCatalog.ForScenario(scenario);
+
+        Assert.Contains("[CK_Products_PositivePrice]", hint);
+        Assert.Contains("SELECT * FROM [dbo].[Products] WHERE NOT ([Price] > 0);", hint);
     }
 
     [Fact]

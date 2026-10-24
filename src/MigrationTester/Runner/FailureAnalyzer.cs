@@ -14,19 +14,28 @@ internal static class FailureAnalyzer
         }
 
         var kinds = new HashSet<ScenarioKind>();
+        bool constraintConflict = false;
         foreach (SqlError error in sql.Errors)
         {
             kinds.UnionWith(KindsFor(error.Number));
+            constraintConflict |= error.Number == 547;
         }
 
+        string message = string.Join(" ", sql.Errors.Cast<SqlError>().Select(static e => e.Message));
         var candidates = scenarios.Where(s => s.Status == ScenarioStatus.Planted && kinds.Contains(s.Kind)).ToList();
+        if (constraintConflict)
+        {
+            // 547 names the FOREIGN KEY or CHECK constraint that rejected the data; data planted for other constraints did not break it.
+            candidates.RemoveAll(s =>
+                (s.Kind is ScenarioKind.ForeignKeyOrphan or ScenarioKind.CheckConstraintViolation) && !IsObjectNamedIn(message, s));
+        }
+
         if (candidates.Count <= 1)
         {
             return candidates;
         }
 
         // Several of the right kind: keep those whose constraint, index or column the message names.
-        string message = string.Join(" ", sql.Errors.Cast<SqlError>().Select(static e => e.Message));
         var named = candidates.Where(s => IsNamedIn(message, s)).ToList();
         return named.Count > 0 ? named : candidates;
     }
@@ -52,6 +61,26 @@ internal static class FailureAnalyzer
     };
 
     private static bool IsNamedIn(string message, MigrationScenario scenario)
+        => IsObjectNamedIn(message, scenario)
+            || scenario.Columns.Concat(ColumnsInOperation(scenario)).Any(c => message.Contains($"'{c}'", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Columns as the failing statement names them. Scenarios hold N-1 column names, which differ after a rename
+    /// earlier in the same migration.
+    /// </summary>
+    private static string[] ColumnsInOperation(MigrationScenario scenario) => scenario.SourceOperation switch
+    {
+        CreateIndexOperation i => i.Columns,
+        AddForeignKeyOperation f => f.Columns,
+        AddUniqueConstraintOperation u => u.Columns,
+        AddPrimaryKeyOperation p => p.Columns,
+        AlterColumnOperation a => [a.Name],
+        AddColumnOperation c => [c.Name],
+        _ => []
+    };
+
+    /// <summary>True when the message names the index or constraint the scenario's operation creates.</summary>
+    private static bool IsObjectNamedIn(string message, MigrationScenario scenario)
     {
         string? objectName = scenario.SourceOperation switch
         {
@@ -63,21 +92,7 @@ internal static class FailureAnalyzer
             _ => null
         };
 
-        // Scenarios hold N-1 column names; the message uses the names the failing statement uses, which differ
-        // after a rename earlier in the same migration.
-        string[] columnsInOperation = scenario.SourceOperation switch
-        {
-            CreateIndexOperation i => i.Columns,
-            AddForeignKeyOperation f => f.Columns,
-            AddUniqueConstraintOperation u => u.Columns,
-            AddPrimaryKeyOperation p => p.Columns,
-            AlterColumnOperation a => [a.Name],
-            AddColumnOperation c => [c.Name],
-            _ => []
-        };
-
-        return (!string.IsNullOrEmpty(objectName) && message.Contains(objectName, StringComparison.OrdinalIgnoreCase))
-            || scenario.Columns.Concat(columnsInOperation).Any(c => message.Contains($"'{c}'", StringComparison.OrdinalIgnoreCase));
+        return !string.IsNullOrEmpty(objectName) && message.Contains(objectName, StringComparison.OrdinalIgnoreCase);
     }
 
     private static SqlException? FindSqlException(Exception exception)

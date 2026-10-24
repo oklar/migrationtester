@@ -21,6 +21,7 @@ dotnet add package MigrationTester --prerelease
 | shrinks a string or binary column | a value one longer than the new maximum |
 | changes a column's type | a value the new type cannot hold: text in a column becoming a number, GUID or date; `32768` in one becoming `smallint`; `10^14` in a `decimal(18,2)` becoming `decimal(18,4)`; a year-1000 date in one becoming `datetime` |
 | adds a NOT NULL column without a default | an existing row |
+| adds a CHECK constraint that compares one column with literals (`=`, `<>`, `<`, `<=`, `>`, `>=`, `IN (...)`, `IS NOT NULL`, joined by `AND`) | a value that breaks it: `0` for `[Price] > 0`, `N'x'` for `[Status] IN (N'Open', N'Closed')`, a NULL for `IS NOT NULL` |
 
 Every planted row is valid before the migration: foreign keys point at real rows, existing unique keys stay unique, values fit the old column. So a failure points at the migration, not at the test data. The data works across schemas and with identity, rowversion, computed, temporal and GUID-keyed tables.
 
@@ -113,7 +114,8 @@ Then use `Server=127.0.0.1,1433;User Id=sa;Password=Your_password1;TrustServerCe
 - **SQL Server only.** Other EF Core providers need their own catalog queries, seed SQL and error handling.
 - **Only `Up()` is tested**, and only operations built with `MigrationBuilder`; what `migrationBuilder.Sql(...)` does is not analyzed (flagged with a warning and `ContainsRawSql`).
 - **Deterministic cases, not random data.** A migration can still fail on data nobody thought of.
-- **Seeding** inserts one ordinary row per table and derives the bad rows from it. When SQL Server rejects a seed statement (an existing CHECK constraint, a trigger, a column type with no generator, a required self-referencing foreign key), those cases become `NotSeeded` with the reason, and the run carries on. Filtered unique indexes are seeded only when the filter is `IS NOT NULL` terms; new CHECK constraints are never seeded.
+- **Seeding** inserts one ordinary row per table and derives the bad rows from it. When SQL Server rejects a seed statement (an existing CHECK constraint, a trigger, a column type with no generator, a required self-referencing foreign key), those cases become `NotSeeded` with the reason, and the run carries on. Filtered unique indexes are seeded only when the filter is `IS NOT NULL` terms.
+- **New CHECK constraints** are seeded only when they compare one column with literals, as in the table above, and the column is a number (`int`, `decimal`, `money`, `float`, `bit` and the like) or a `char`/`varchar`/`nchar`/`nvarchar` string; for strings only `=`, `<>`, `<`, `>` and `IN` are used, since what sorts below or above a value depends on the collation. Anything else, such as `LEN([Code]) = 3`, `[Start] < [End]`, `OR`, or a date column, is reported as `NotSeeded`.
 - **Renames are followed within one `Up()`.** Operations after a `RenameColumn` or `RenameTable` (including a move to another schema) are planted under the N-1 names, which the scenario's `Table` and `Columns` hold. A rename done another way, such as `sp_rename` in `migrationBuilder.Sql(...)`, is not followed.
 - **Silent data loss** (e.g. `datetime2` → `date`, scale reduction, `nvarchar` → `varchar`) does not fail a migration, so it is not reported.
 - **Seed values avoid HasData ids** by starting identity counters and integer keys at 1,000,000 (30,000 for `smallint`, 100 for `tinyint`). Seed data with ids above that can still collide.

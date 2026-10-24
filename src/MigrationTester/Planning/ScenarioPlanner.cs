@@ -248,21 +248,51 @@ internal static class ScenarioPlanner
 
     private static MigrationScenario CheckScenario(AddCheckConstraintOperation chk, RenameMap renames)
     {
-        var target = Target.Of(renames, chk.Schema, chk.Table);
-        bool present = target.Table is not null;
-        return new MigrationScenario
+        // Parse first: the predicate's column may also have been renamed earlier in this migration.
+        _ = CheckPredicate.TryParse(chk.Sql, out var predicate);
+        var target = Target.Of(renames, chk.Schema, chk.Table, predicate is null ? null : [predicate.Column]);
+        var table = target.Table;
+        var scenario = new MigrationScenario
         {
             Kind = ScenarioKind.CheckConstraintViolation,
             Name = $"Rows violating new check constraint '{chk.Name}'{Note(target)}",
             Schema = target.Name.Schema,
             Table = target.Name.Name,
             Columns = [],
-            SourceOperation = chk,
-            Status = present ? ScenarioStatus.NotSeeded : ScenarioStatus.NotApplicable,
-            Reason = present
-                ? "Automatic row generation from arbitrary CHECK SQL is not supported; add a custom integration test."
-                : TableMissing
+            SourceOperation = chk
         };
+
+        if (table is null)
+        {
+            return scenario.NotApplicable(TableMissing);
+        }
+
+        if (predicate is null)
+        {
+            return scenario.NotSeeded(
+                "Automatic row generation from arbitrary CHECK SQL is not supported; add a custom integration test.");
+        }
+
+        if (target.RenamedAwayReason is { } renamedAway)
+        {
+            return scenario.NotSeeded(renamedAway);
+        }
+
+        if (table.FindColumn(target.Columns[0]) is not { } column)
+        {
+            return scenario.NotSeeded(
+                $"Column '{predicate.Column}' does not exist at N-1, so no existing row holds a value for it.");
+        }
+
+        scenario = scenario with { Columns = [column.Name] };
+        if (!column.IsInsertable)
+        {
+            return scenario.NotSeeded($"Column '{column.Name}' is filled by SQL Server, so no value can be planted in it.");
+        }
+
+        return predicate.ViolatingValue(column) is { } value
+            ? scenario with { SeedValue = value }
+            : scenario.NotSeeded($"No {column.Type} value that breaks '{chk.Sql}' could be generated.");
     }
 
     private static MigrationScenario? AddColumnScenario(AddColumnOperation addCol, RenameMap renames)

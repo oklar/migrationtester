@@ -15,7 +15,10 @@ public enum ScenarioKind
     /// <summary>A value longer than the column's new maximum length.</summary>
     MaxLengthExceededAfterShrink,
 
-    /// <summary>Rows violating a new CHECK constraint (never seeded automatically).</summary>
+    /// <summary>
+    /// A value breaking a new CHECK constraint, e.g. <c>0</c> for <c>[Price] &gt; 0</c>. Planted only when the constraint
+    /// compares one column with literals; other constraints are reported as <see cref="ScenarioStatus.NotSeeded"/>.
+    /// </summary>
     CheckConstraintViolation,
 
     /// <summary>Existing rows when a NOT NULL column without a default is added.</summary>

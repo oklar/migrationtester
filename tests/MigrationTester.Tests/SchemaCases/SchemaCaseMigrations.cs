@@ -277,6 +277,72 @@ public sealed class CreateTickets : Migration
             });
 }
 
+public sealed class CheckedValuesContext(DbContextOptions<CheckedValuesContext> options) : DbContext(options);
+
+[DbContext(typeof(CheckedValuesContext))]
+[Migration("20260101000001_CreateSellersAndListings")]
+public sealed class CreateSellersAndListings : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.CreateTable(
+            name: "Sellers",
+            columns: table => new { Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1") },
+            constraints: table => table.PrimaryKey("PK_Sellers", x => x.Id));
+
+        migrationBuilder.CreateTable(
+            name: "Listings",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                Price = table.Column<decimal>("decimal(10,2)", precision: 10, scale: 2, nullable: false),
+                Quantity = table.Column<int>("int", nullable: false),
+                Status = table.Column<string>("nvarchar(20)", maxLength: 20, nullable: false, defaultValue: "Open"),
+                Code = table.Column<string>("nvarchar(10)", maxLength: 10, nullable: false),
+                SellerId = table.Column<int>("int", nullable: true)
+            },
+            constraints: table => table.PrimaryKey("PK_Listings", x => x.Id));
+    }
+}
+
+// What EF scaffolds for HasCheckConstraint: the predicate exactly as written.
+[DbContext(typeof(CheckedValuesContext))]
+[Migration("20260101000002_AddPositiveListingPrice")]
+public sealed class AddPositiveListingPrice : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.AddCheckConstraint("CK_Listings_PositivePrice", "Listings", "[Price] > 0");
+}
+
+[DbContext(typeof(CheckedValuesContext))]
+[Migration("20260101000003_AddListingQuantityRange")]
+public sealed class AddListingQuantityRange : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.AddCheckConstraint("CK_Listings_QuantityRange", "Listings", "[Quantity] >= 1 AND [Quantity] <= 100");
+}
+
+[DbContext(typeof(CheckedValuesContext))]
+[Migration("20260101000004_AddListingStatusValues")]
+public sealed class AddListingStatusValues : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.AddCheckConstraint("CK_Listings_Status", "Listings", "[Status] IN (N'Open', N'Closed')");
+}
+
+// The CHECK is not recognized, so nothing is planted for it, but the ordinary row already breaks it ('v1' is not
+// 3 long); the failure must not be blamed on the orphan row planted for the foreign key.
+[DbContext(typeof(CheckedValuesContext))]
+[Migration("20260101000005_AddListingCodeLengthAndSeller")]
+public sealed class AddListingCodeLengthAndSeller : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.AddCheckConstraint("CK_Listings_CodeLength", "Listings", "LEN([Code]) = 3");
+        migrationBuilder.AddForeignKey("FK_Listings_Sellers_SellerId", "Listings", "SellerId", "Sellers", principalColumn: "Id");
+    }
+}
+
 public sealed class FilteredUniqueContext(DbContextOptions<FilteredUniqueContext> options) : DbContext(options);
 
 [DbContext(typeof(FilteredUniqueContext))]

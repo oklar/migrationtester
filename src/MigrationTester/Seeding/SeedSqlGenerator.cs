@@ -296,18 +296,21 @@ internal static class SeedSqlGenerator
 
             case ScenarioKind.ColumnTypeConversionIncompatible:
             case ScenarioKind.DecimalPrecisionOverflow:
-                if (!FindColumn(scenario, table, out var converted, out failure))
+            case ScenarioKind.CheckConstraintViolation:
+                if (!FindColumn(scenario, table, out var planned, out failure))
                 {
                     return false;
                 }
 
                 if (scenario.SeedValue is null)
                 {
-                    failure = "no value is known that fails this conversion";
+                    failure = scenario.Kind == ScenarioKind.CheckConstraintViolation
+                        ? "no value is known that breaks this check constraint"
+                        : "no value is known that fails this conversion";
                     return false;
                 }
 
-                values = [new ColumnValue(converted.Name, scenario.SeedValue)];
+                values = [new ColumnValue(planned.Name, scenario.SeedValue)];
                 return true;
 
             case ScenarioKind.ForeignKeyOrphan:

@@ -69,7 +69,7 @@ public sealed record MigrationScenario
     /// <summary>T-SQL showing how a migration can fix data like this before the statement that fails on it.</summary>
     public string RepairHint => RepairHintCatalog.ForScenario(this);
 
-    /// <summary>SQL literal valid for the column at N-1 that the migration's conversion rejects.</summary>
+    /// <summary>SQL literal valid for the column at N-1 that the migration's conversion or new CHECK constraint rejects.</summary>
     internal string? SeedValue { get; init; }
 
     /// <summary>For filtered unique indexes: columns the filter requires to be non-NULL.</summary>

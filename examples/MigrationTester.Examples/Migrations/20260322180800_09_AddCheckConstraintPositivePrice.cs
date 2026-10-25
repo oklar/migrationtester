@@ -6,9 +6,8 @@ namespace MigrationTester.Examples.Migrations
 {
     /// <summary>
     /// Adds CHECK constraint requiring Products.Price > 0.
-    /// Scenario: CheckConstraintViolation, reported as NotSeeded because rows that break
-    /// arbitrary CHECK SQL cannot be generated automatically.
-    /// This migration passes because no violating row is planted.
+    /// Scenario: CheckConstraintViolation — existing Products rows may have a Price of 0 or less,
+    /// which the new constraint rejects.
     /// </summary>
     public partial class _09_AddCheckConstraintPositivePrice : Migration
     {

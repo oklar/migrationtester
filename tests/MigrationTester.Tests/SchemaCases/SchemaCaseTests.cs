@@ -106,6 +106,32 @@ public sealed class SchemaCaseTests
         AssertBrokenBy(step, ScenarioKind.DuplicateUniqueIndexOrConstraint);
     }
 
+    [Theory]
+    [InlineData("20260101000002_AddPositiveListingPrice", "[Price] = 0")]
+    [InlineData("20260101000003_AddListingQuantityRange", "[Quantity] = 0")]
+    [InlineData("20260101000004_AddListingStatusValues", "[Status] = N'x'")]
+    public async Task Check_constraint_fails_on_a_planted_row_that_breaks_it(string migrationId, string assignment)
+    {
+        // The ordinary row satisfies each constraint; only the planted value breaks it.
+        var step = await RunAsync<CheckedValuesContext>(migrationId, o => new(o));
+
+        AssertBrokenBy(step, ScenarioKind.CheckConstraintViolation);
+        Assert.Contains($"UPDATE TOP (1) [dbo].[Listings] SET {assignment};", step.SqlExecuted);
+        Assert.Contains("SELECT * FROM [dbo].[Listings] WHERE NOT (", step.Summary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Check_constraint_conflict_is_not_blamed_on_a_foreign_key_orphan()
+    {
+        var step = await RunAsync<CheckedValuesContext>("20260101000005_AddListingCodeLengthAndSeller", o => new(o));
+
+        Assert.Equal(MigrationStepOutcome.Failed, step.Outcome);
+        Assert.Contains(step.Scenarios, s => s.Kind == ScenarioKind.ForeignKeyOrphan && s.Status == ScenarioStatus.Planted);
+        Assert.Contains(step.Scenarios, s => s.Kind == ScenarioKind.CheckConstraintViolation && s.Status == ScenarioStatus.NotSeeded);
+        Assert.Contains("CK_Listings_CodeLength", step.Summary, StringComparison.Ordinal);
+        Assert.Empty(step.FailingScenarios);
+    }
+
     [Fact]
     public async Task Same_column_gets_each_bad_value_in_its_own_row()
     {

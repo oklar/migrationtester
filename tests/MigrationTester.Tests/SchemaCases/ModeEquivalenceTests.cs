@@ -25,6 +25,7 @@ public sealed class ModeEquivalenceTests
         ["FilteredUnique"] = () => new FilteredUniqueContext(Build<FilteredUniqueContext>()),
         ["RequiredAndShorter"] = () => new RequiredAndShorterContext(Build<RequiredAndShorterContext>()),
         ["CheckedStatus"] = () => new CheckedStatusContext(Build<CheckedStatusContext>()),
+        ["CheckedValues"] = () => new CheckedValuesContext(Build<CheckedValuesContext>()),
         ["SeedData"] = () => new SeedDataContext(Build<SeedDataContext>()),
         ["OwnTransaction"] = () => new OwnTransactionContext(Build<OwnTransactionContext>()),
         ["Rename"] = () => new RenameContext(Build<RenameContext>()),

@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using MigrationTester.Seeding;
 
 namespace MigrationTester.Planning;
@@ -72,6 +73,15 @@ internal static class RepairHintCatalog
 
     private static string Check(MigrationScenario s)
     {
+        if (s.SourceOperation is AddCheckConstraintOperation { Sql: { Length: > 0 } predicate } chk)
+        {
+            string table = SqlDialect.Q(s.Schema, s.Table);
+            return $"""
+                -- CHECK constraint [{chk.Name}]: update or delete the rows that fail ({predicate}) before adding it.
+                -- Find them: SELECT * FROM {table} WHERE NOT ({predicate});
+                """;
+        }
+
         return """
             -- CHECK constraint: update or delete rows that fail the new predicate.
             -- Inspect the constraint SQL in the migration, then run a targeted UPDATE/DELETE

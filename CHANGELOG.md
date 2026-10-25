@@ -4,6 +4,16 @@ All notable changes to MigrationTester. Versions follow [Semantic Versioning](ht
 
 ## [Unreleased]
 
+### Added
+
+- New CHECK constraints get planted data when they compare one column with literals: `=`, `<>`, `!=`, `<`, `<=`, `>`, `>=`, `IN (...)` and `IS NOT NULL`, joined by `AND`, as in `[Price] > 0`, `[Status] IN (N'Open', N'Closed')` or `[Quantity] >= 1 AND [Quantity] <= 100`. One row gets a value that the column accepts before the migration but the constraint rejects, such as `0`, `N'x'` or a NULL. Other predicates, such as `LEN([Code]) = 3` or `[Start] < [End]`, are still `NotSeeded`.
+- The repair hint for a CHECK constraint includes a query for the rows that fail its predicate.
+
+### Changed
+
+- Migrations that add such a CHECK constraint without handling existing rows that break it now fail; before, they passed untested. The sample's migration 09 (`[Price] > 0`) now fails on purpose.
+- `FailingScenarios` matches a FOREIGN KEY or CHECK conflict (SQL Server error 547) only to the scenario planted for the constraint the error names.
+
 ### Fixed
 
 - Operations that use a name given by a `RenameColumn` or `RenameTable` earlier in the same `Up()` now get planted data, instead of being reported as `NotSeeded` because the new name does not exist at N-1. EF scaffolds this for a renamed column that becomes NOT NULL or gets a unique index, for example. Renames are followed in order, through chains and moves to another schema; the scenario's `Table` and `Columns` hold the N-1 names, its `Name` mentions the rename, and `FailingScenarios` matches SQL Server errors that use the new names.

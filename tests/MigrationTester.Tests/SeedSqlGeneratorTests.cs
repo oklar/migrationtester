@@ -296,6 +296,26 @@ public sealed class SeedSqlGeneratorTests
     }
 
     [Fact]
+    public void TryGetBadValues_check_constraint_uses_the_planned_value()
+    {
+        var table = Table("Products", Col("Price", "decimal(10,2)"));
+        var scenario = Scenario(ScenarioKind.CheckConstraintViolation, "Price") with { SeedValue = "0" };
+
+        Assert.True(SeedSqlGenerator.TryGetBadValues(scenario, table, out var values, out _));
+        Assert.Equal([new ColumnValue("Price", "0")], values);
+        Assert.Equal("UPDATE TOP (1) [dbo].[Products] SET [Price] = 0;", SeedSqlGenerator.UpdateOneRow(table, values));
+    }
+
+    [Fact]
+    public void TryGetBadValues_check_constraint_fails_without_a_planned_value()
+    {
+        var table = Table("Products", Col("Price", "decimal(10,2)"));
+
+        Assert.False(SeedSqlGenerator.TryGetBadValues(Scenario(ScenarioKind.CheckConstraintViolation, "Price"), table, out _, out string? failure));
+        Assert.Contains("breaks this check constraint", failure);
+    }
+
+    [Fact]
     public void TryGetBadValues_not_null_column_added_needs_no_values()
     {
         var table = Table("Orders", Col("Id", "int", identity: true));

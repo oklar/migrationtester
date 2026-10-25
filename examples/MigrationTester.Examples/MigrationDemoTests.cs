@@ -3,9 +3,8 @@ using Microsoft.EntityFrameworkCore;
 namespace MigrationTester.Examples;
 
 /// <summary>
-/// The sample's nine migrations are written to break: 02–08 each fail on a different kind of data,
-/// 01 has no earlier data and 09 adds a CHECK constraint, which is never seeded automatically.
-/// Each run uses its own throwaway database, dropped afterwards.
+/// The sample's nine migrations are written to break: 02–09 each fail on a different kind of data,
+/// and 01 has no earlier data. Each run uses its own throwaway database, dropped afterwards.
 /// </summary>
 public sealed class MigrationDemoTests
 {
@@ -33,15 +32,11 @@ public sealed class MigrationDemoTests
         AssertBrokenBy(report.Steps[5], ScenarioKind.NotNullColumnAddedWithoutDefault);
         AssertBrokenBy(report.Steps[6], ScenarioKind.ColumnTypeConversionIncompatible);
         AssertBrokenBy(report.Steps[7], ScenarioKind.DecimalPrecisionOverflow);
-
-        // CHECK constraints are reported as not seeded, so 09 passes untested.
-        Assert.Equal(MigrationStepOutcome.Passed, report.Steps[8].Outcome);
-        Assert.Contains(report.Steps[8].Scenarios,
-            s => s.Kind == ScenarioKind.CheckConstraintViolation && s.Status == ScenarioStatus.NotSeeded);
+        AssertBrokenBy(report.Steps[8], ScenarioKind.CheckConstraintViolation);
     }
 
     /// <summary>
-    /// How you would test your own project: one test case per migration. Here 02–08 fail by design, so
+    /// How you would test your own project: one test case per migration. Here 02–09 fail by design, so
     /// it only runs when requested: <c>dotnet test -- xUnit.Explicit=only</c>.
     /// </summary>
     [Theory(Explicit = true)]

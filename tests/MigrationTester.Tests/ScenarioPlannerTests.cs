@@ -160,25 +160,53 @@ public sealed class ScenarioPlannerTests
     }
 
     [Fact]
-    public void Plan_check_constraint_always_skipped()
+    public void Plan_check_constraint_on_one_column_plants_a_value_that_breaks_it()
     {
-        var ops = (IReadOnlyList<MigrationOperation>)
-        [
-            new AddCheckConstraintOperation
-            {
-                Name = "CK_Items_PositiveQty",
-                Table = "Items",
-                Sql = "[Qty] > 0"
-            }
-        ];
+        var check = new AddCheckConstraintOperation { Name = "CK_Items_PositiveQty", Table = "Items", Sql = "[qty] > 0" };
+        var schema = TestSchema.Of(TestSchema.Table("Items", TestSchema.Col("Id", "int", identity: true), TestSchema.Col("Qty", "int")));
 
-        var schema = TestSchema.WithTables("Items");
-        var scenarios = ScenarioPlanner.Plan(ops, schema);
+        var s = Assert.Single(ScenarioPlanner.Plan([check], schema));
 
-        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioKind.CheckConstraintViolation, s.Kind);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
+        Assert.Equal(["Qty"], s.Columns);
+        Assert.Equal("0", s.SeedValue);
+        Assert.Null(s.Reason);
+    }
+
+    [Theory]
+    [InlineData("LEN([Code]) = 3", "arbitrary CHECK SQL is not supported")]
+    [InlineData("[Start] < [End]", "arbitrary CHECK SQL is not supported")]
+    [InlineData("[Missing] > 0", "Column 'Missing' does not exist at N-1")]
+    [InlineData("[Total] > 0", "Column 'Total' is filled by SQL Server")]
+    [InlineData("[Small] >= 0", "No tinyint value that breaks '[Small] >= 0' could be generated")]
+    [InlineData("[Start] > '2020-01-01'", "No datetime2 value")]
+    public void Plan_check_constraint_without_a_known_breaking_value_is_not_seeded(string sql, string reason)
+    {
+        var check = new AddCheckConstraintOperation { Name = "CK_Items", Table = "Items", Sql = sql };
+        var schema = TestSchema.Of(TestSchema.Table("Items",
+            TestSchema.Col("Code", "nvarchar(10)"),
+            TestSchema.Col("Start", "datetime2"),
+            TestSchema.Col("End", "datetime2"),
+            TestSchema.Col("Total", "int", computed: true),
+            TestSchema.Col("Small", "tinyint")));
+
+        var s = Assert.Single(ScenarioPlanner.Plan([check], schema));
+
         Assert.Equal(ScenarioKind.CheckConstraintViolation, s.Kind);
         Assert.Equal(ScenarioStatus.NotSeeded, s.Status);
-        Assert.NotNull(s.Reason);
+        Assert.Contains(reason, s.Reason);
+        Assert.Null(s.SeedValue);
+    }
+
+    [Fact]
+    public void Plan_check_constraint_skipped_when_table_missing()
+    {
+        var check = new AddCheckConstraintOperation { Name = "CK_Items_PositiveQty", Table = "Items", Sql = "[Qty] > 0" };
+
+        var s = Assert.Single(ScenarioPlanner.Plan([check], TestSchema.WithTables()));
+
+        Assert.Equal(ScenarioStatus.NotApplicable, s.Status);
     }
 
     [Fact]
@@ -605,6 +633,26 @@ public sealed class ScenarioPlannerTests
         Assert.Equal("People", s.Table);
         Assert.Equal(["Name"], s.Columns);
         Assert.Equal("NULL in 'FullName' before column becomes NOT NULL ('FullName' was 'Name' before this migration)", s.Name);
+    }
+
+    [Fact]
+    public void Plan_check_constraint_on_a_column_renamed_earlier_plants_under_the_N_minus_1_name()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new RenameColumnOperation { Name = "Cost", Table = "Products", NewName = "Price" },
+            new AddCheckConstraintOperation { Name = "CK_Products_Price", Table = "Products", Sql = "[Price] > 0" }
+        ];
+
+        var schema = TestSchema.Of(TestSchema.Table("Products", TestSchema.Col("Cost", "decimal(18,2)")));
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioKind.CheckConstraintViolation, s.Kind);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
+        Assert.Equal(["Cost"], s.Columns);
+        Assert.NotNull(s.SeedValue);
+        Assert.Contains("'Price' was 'Cost'", s.Name);
     }
 
     [Fact]

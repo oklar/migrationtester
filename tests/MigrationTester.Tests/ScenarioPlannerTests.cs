@@ -583,4 +583,220 @@ public sealed class ScenarioPlannerTests
 
         Assert.Empty(scenarios);
     }
+
+    [Fact]
+    public void Plan_column_renamed_then_made_required_targets_the_N_minus_1_column()
+    {
+        // OldColumn says NOT NULL; only the live column, found under its N-1 name, shows it is nullable.
+        var alter = new AlterColumnOperation { Name = "FullName", Table = "People", ColumnType = "nvarchar(100)", IsNullable = false };
+        alter.OldColumn.ColumnType = "nvarchar(100)";
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new RenameColumnOperation { Name = "Name", Table = "People", NewName = "FullName" },
+            alter
+        ];
+
+        var schema = TestSchema.Of(TestSchema.Table("People", TestSchema.Col("Name", "nvarchar(100)", nullable: true)));
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioKind.NonNullableColumnWithNull, s.Kind);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
+        Assert.Equal("People", s.Table);
+        Assert.Equal(["Name"], s.Columns);
+        Assert.Equal("NULL in 'FullName' before column becomes NOT NULL ('FullName' was 'Name' before this migration)", s.Name);
+    }
+
+    [Fact]
+    public void Plan_operation_before_a_rename_keeps_its_names()
+    {
+        var alter = new AlterColumnOperation { Name = "Name", Table = "People", IsNullable = false };
+        alter.OldColumn.IsNullable = true;
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            alter,
+            new RenameColumnOperation { Name = "Name", Table = "People", NewName = "FullName" }
+        ];
+
+        var scenarios = ScenarioPlanner.Plan(ops, TestSchema.WithTables("People"));
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(["Name"], s.Columns);
+        Assert.Equal("NULL in 'Name' before column becomes NOT NULL", s.Name);
+    }
+
+    [Fact]
+    public void Plan_table_renamed_then_given_unique_index_targets_the_N_minus_1_table()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new RenameTableOperation { Name = "People", NewName = "Persons" },
+            new CreateIndexOperation { Name = "IX_Persons_Code", Table = "Persons", Columns = ["Code"], IsUnique = true }
+        ];
+
+        var scenarios = ScenarioPlanner.Plan(ops, TestSchema.WithTables("People"));
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioKind.DuplicateUniqueIndexOrConstraint, s.Kind);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
+        Assert.Equal("dbo", s.Schema);
+        Assert.Equal("People", s.Table);
+        Assert.Equal(["Code"], s.Columns);
+        Assert.Equal("Duplicate values for unique index 'IX_Persons_Code' on 'Persons' ('Persons' was 'People' before this migration)", s.Name);
+    }
+
+    [Fact]
+    public void Plan_table_moved_to_another_schema_targets_the_N_minus_1_table()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new RenameTableOperation { Name = "People", NewName = "Persons", NewSchema = "crm" },
+            new CreateIndexOperation { Name = "IX_Persons_Code", Schema = "crm", Table = "Persons", Columns = ["Code"], IsUnique = true }
+        ];
+
+        var scenarios = ScenarioPlanner.Plan(ops, TestSchema.WithTables("People"));
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
+        Assert.Equal("dbo", s.Schema);
+        Assert.Equal("People", s.Table);
+        Assert.Contains("'crm.Persons' was 'dbo.People'", s.Name);
+    }
+
+    [Theory]
+    [InlineData(null)] // A migration with a target model: EF moves the table to the default schema.
+    [InlineData("app")] // A migration without one: EF keeps the schema.
+    public void Plan_table_rename_without_new_schema_matches_either_reading(string? laterSchema)
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new RenameTableOperation { Name = "Items", Schema = "app", NewName = "Things" },
+            new CreateIndexOperation { Name = "IX_Things_Code", Schema = laterSchema, Table = "Things", Columns = ["Code"], IsUnique = true }
+        ];
+
+        var schema = TestSchema.Of(new TableMetadata { Name = new TableName("app", "Items"), Columns = [TestSchema.Col("Code", "nvarchar(50)")] });
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
+        Assert.Equal("app", s.Schema);
+        Assert.Equal("Items", s.Table);
+    }
+
+    [Fact]
+    public void Plan_follows_rename_chains_across_tables_and_columns()
+    {
+        var alter = new AlterColumnOperation { Name = "C", Table = "T3", IsNullable = false };
+        alter.OldColumn.IsNullable = true;
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new RenameColumnOperation { Name = "A", Table = "T1", NewName = "B" },
+            new RenameTableOperation { Name = "T1", NewName = "T2" },
+            new RenameColumnOperation { Name = "B", Table = "T2", NewName = "C" },
+            new RenameTableOperation { Name = "T2", NewName = "T3" },
+            alter
+        ];
+
+        var scenarios = ScenarioPlanner.Plan(ops, TestSchema.Of(TestSchema.Table("T1", TestSchema.Col("A", "int", nullable: true))));
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
+        Assert.Equal("T1", s.Table);
+        Assert.Equal(["A"], s.Columns);
+        Assert.Contains("'T3' was 'T1', 'C' was 'A'", s.Name);
+    }
+
+    [Fact]
+    public void Plan_follows_a_column_swap()
+    {
+        var alter = new AlterColumnOperation { Name = "First", Table = "People", MaxLength = 20 };
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new RenameColumnOperation { Name = "First", Table = "People", NewName = "Tmp" },
+            new RenameColumnOperation { Name = "Last", Table = "People", NewName = "First" },
+            new RenameColumnOperation { Name = "Tmp", Table = "People", NewName = "Last" },
+            alter
+        ];
+
+        var schema = TestSchema.Of(TestSchema.Table(
+            "People", TestSchema.Col("First", "nvarchar(10)"), TestSchema.Col("Last", "nvarchar(100)")));
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
+
+        // The column now called First is the N-1 Last, which is long enough to hold an over-long value.
+        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioKind.MaxLengthExceededAfterShrink, s.Kind);
+        Assert.Equal(["Last"], s.Columns);
+        Assert.Equal(100, s.OldMaxLength);
+    }
+
+    [Fact]
+    public void Plan_name_reused_after_a_rename_is_not_the_N_minus_1_column()
+    {
+        var alter = new AlterColumnOperation { Name = "Name", Table = "People", IsNullable = false };
+        alter.OldColumn.IsNullable = true;
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new RenameColumnOperation { Name = "Name", Table = "People", NewName = "FullName" },
+            new AddColumnOperation { Name = "Name", Table = "People", ClrType = typeof(string), IsNullable = true },
+            alter
+        ];
+
+        var schema = TestSchema.Of(TestSchema.Table("People", TestSchema.Col("Name", "nvarchar(100)", nullable: true)));
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioStatus.NotSeeded, s.Status);
+        Assert.Contains("renamed the column of that name", s.Reason);
+    }
+
+    [Fact]
+    public void Plan_renamed_filter_columns_map_back_to_N_minus_1()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new RenameColumnOperation { Name = "Email", Table = "Users", NewName = "EmailAddress" },
+            new CreateIndexOperation
+            {
+                Name = "IX_Users_EmailAddress",
+                Table = "Users",
+                Columns = ["EmailAddress"],
+                IsUnique = true,
+                Filter = "[EmailAddress] IS NOT NULL"
+            }
+        ];
+
+        var scenarios = ScenarioPlanner.Plan(ops, TestSchema.WithTables("Users"));
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
+        Assert.Equal(["Email"], s.Columns);
+        Assert.Equal(["Email"], s.NotNullFilterColumns);
+    }
+
+    [Fact]
+    public void Plan_foreign_key_between_renamed_tables_and_columns_uses_N_minus_1_names()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new RenameTableOperation { Name = "Customers", NewName = "Clients" },
+            new RenameColumnOperation { Name = "CustomerId", Table = "Orders", NewName = "ClientId" },
+            new AddForeignKeyOperation
+            {
+                Name = "FK_Orders_Clients_ClientId",
+                Table = "Orders",
+                Columns = ["ClientId"],
+                PrincipalTable = "Clients",
+                PrincipalColumns = ["Id"]
+            }
+        ];
+
+        var scenarios = ScenarioPlanner.Plan(ops, TestSchema.WithTables("Orders", "Customers"));
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
+        Assert.Equal("Orders", s.Table);
+        Assert.Equal(["CustomerId"], s.Columns);
+        Assert.Equal("Customers", s.PrincipalTable);
+        Assert.Equal(["Id"], s.PrincipalColumns);
+    }
 }

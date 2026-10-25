@@ -27,6 +27,7 @@ public sealed class ModeEquivalenceTests
         ["CheckedStatus"] = () => new CheckedStatusContext(Build<CheckedStatusContext>()),
         ["SeedData"] = () => new SeedDataContext(Build<SeedDataContext>()),
         ["OwnTransaction"] = () => new OwnTransactionContext(Build<OwnTransactionContext>()),
+        ["Rename"] = () => new RenameContext(Build<RenameContext>()),
         ["BrokenFirst"] = () => new BrokenFirstContext(Build<BrokenFirstContext>())
     };
 

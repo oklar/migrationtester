@@ -4,6 +4,10 @@ All notable changes to MigrationTester. Versions follow [Semantic Versioning](ht
 
 ## [Unreleased]
 
+### Fixed
+
+- Operations that use a name given by a `RenameColumn` or `RenameTable` earlier in the same `Up()` now get planted data, instead of being reported as `NotSeeded` because the new name does not exist at N-1. EF scaffolds this for a renamed column that becomes NOT NULL or gets a unique index, for example. Renames are followed in order, through chains and moves to another schema; the scenario's `Table` and `Columns` hold the N-1 names, its `Name` mentions the rename, and `FailingScenarios` matches SQL Server errors that use the new names.
+
 ## [0.1.0-preview.1] - 2026-10-24
 
 First preview release.

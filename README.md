@@ -114,6 +114,7 @@ Then use `Server=127.0.0.1,1433;User Id=sa;Password=Your_password1;TrustServerCe
 - **Only `Up()` is tested**, and only operations built with `MigrationBuilder`; what `migrationBuilder.Sql(...)` does is not analyzed (flagged with a warning and `ContainsRawSql`).
 - **Deterministic cases, not random data.** A migration can still fail on data nobody thought of.
 - **Seeding** inserts one ordinary row per table and derives the bad rows from it. When SQL Server rejects a seed statement (an existing CHECK constraint, a trigger, a column type with no generator, a required self-referencing foreign key), those cases become `NotSeeded` with the reason, and the run carries on. Filtered unique indexes are seeded only when the filter is `IS NOT NULL` terms; new CHECK constraints are never seeded.
+- **Renames are followed within one `Up()`.** Operations after a `RenameColumn` or `RenameTable` (including a move to another schema) are planted under the N-1 names, which the scenario's `Table` and `Columns` hold. A rename done another way, such as `sp_rename` in `migrationBuilder.Sql(...)`, is not followed.
 - **Silent data loss** (e.g. `datetime2` → `date`, scale reduction, `nvarchar` → `varchar`) does not fail a migration, so it is not reported.
 - **Seed values avoid HasData ids** by starting identity counters and integer keys at 1,000,000 (30,000 for `smallint`, 100 for `tinyint`). Seed data with ids above that can still collide.
 

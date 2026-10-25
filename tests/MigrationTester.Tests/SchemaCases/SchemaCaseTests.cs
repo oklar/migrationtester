@@ -22,6 +22,25 @@ public sealed class SchemaCaseTests
     }
 
     [Fact]
+    public async Task Computed_columns_are_left_to_SQL_Server()
+    {
+        var step = await RunAsync<ComputedColumnContext>("20260101000002_AddUniqueInvoiceNumber", o => new(o));
+
+        AssertBrokenBy(step, ScenarioKind.DuplicateUniqueIndexOrConstraint);
+        Assert.DoesNotContain(step.SqlExecuted, sql => sql.Contains("[Gross]", StringComparison.Ordinal) || sql.Contains("[Label]", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Temporal_table_period_columns_and_history_table_are_left_alone()
+    {
+        var step = await RunAsync<TemporalTableContext>("20260101000002_AddUniqueContractReference", o => new(o));
+
+        AssertBrokenBy(step, ScenarioKind.DuplicateUniqueIndexOrConstraint);
+        Assert.DoesNotContain(step.SqlExecuted, sql => sql.Contains("[ValidFrom]", StringComparison.Ordinal) || sql.Contains("History", StringComparison.Ordinal));
+        Assert.DoesNotContain(step.Warnings, w => w.StartsWith("No baseline row", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Guid_primary_key_does_not_break_duplicate_seeding()
     {
         var step = await RunAsync<GuidKeyContext>("20260101000002_AddUniqueAccountEmail", o => new(o));

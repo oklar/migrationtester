@@ -1,0 +1,26 @@
+version: 2
+
+updates:
+  - package-ecosystem: nuget
+    directory: "/"
+    schedule:
+      interval: weekly
+    ignore:
+      # The library's lowest supported versions (Directory.Packages.props): raising them forces consumers to upgrade.
+      # NuGet audit still fails the build if one of them gets a vulnerability advisory.
+      - dependency-name: Microsoft.EntityFrameworkCore.Relational
+      - dependency-name: Microsoft.Data.SqlClient
+      # Major versions (EF Core 11, xUnit 4, ...) are upgrades to make on purpose.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      nuget:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

@@ -25,7 +25,7 @@ export MIGRATION_TESTER_SQL_TEST='Server=localhost\SQLEXPRESS;Database=Migration
 
 The examples use `MIGRATION_TESTER_SCENARIO_TEST` the same way. Tests run in throwaway databases named after the configured one (`MigrationTester_Test_mt_…`). Before the integration tests start, any left behind by an interrupted run are dropped.
 
-**Schema cases.** `tests/MigrationTester.Tests/SchemaCases/` runs end to end over hand-written migrations for common schema shapes: rowversion columns, GUID keys, non-`dbo` schemas, required foreign keys, filtered unique indexes, type narrowing, HasData ids, seed rows rejected by a CHECK constraint, statements outside a transaction, a broken earlier migration. `ModeEquivalenceTests` checks that the default transactional mode reports exactly what `RebuildDatabaseForEachMigration` reports for each of them.
+**Schema cases.** `tests/MigrationTester.Tests/SchemaCases/` runs end to end over hand-written migrations for common schema shapes: rowversion, computed and temporal tables, GUID keys, non-`dbo` schemas, required foreign keys, filtered unique indexes, type narrowing, HasData ids, seed rows rejected by a CHECK constraint, statements outside a transaction, a broken earlier migration. `ModeEquivalenceTests` checks that the default transactional mode reports exactly what `RebuildDatabaseForEachMigration` reports for each of them.
 
 When you find a schema MigrationTester gets wrong, add it there as a test of the behavior you want and mark it `Explicit` until it is fixed; the default run skips explicit tests. Run them with:
 
@@ -65,7 +65,7 @@ Releases are published from GitHub Actions with [nuget.org trusted publishing](h
 
 ### Each release
 
-1. Update `CHANGELOG.md`: give the `Unreleased` section a version and date.
+1. Update `CHANGELOG.md`: move the entries under `[Unreleased]` into a new `## [x.y.z] - YYYY-MM-DD` section below it, leave `[Unreleased]` empty, and add the version's link at the bottom of the file.
 2. Merge to `main` and wait for CI to pass.
 3. Tag the commit and push the tag:
 

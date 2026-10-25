@@ -22,7 +22,7 @@ dotnet add package MigrationTester --prerelease
 | changes a column's type | a value the new type cannot hold: text in a column becoming a number, GUID or date; `32768` in one becoming `smallint`; `10^14` in a `decimal(18,2)` becoming `decimal(18,4)`; a year-1000 date in one becoming `datetime` |
 | adds a NOT NULL column without a default | an existing row |
 
-Every planted row is valid before the migration: foreign keys point at real rows, existing unique keys stay unique, values fit the old column. So a failure points at the migration, not at the test data. The data works across schemas, identity, rowversion, computed and GUID-keyed tables.
+Every planted row is valid before the migration: foreign keys point at real rows, existing unique keys stay unique, values fit the old column. So a failure points at the migration, not at the test data. The data works across schemas and with identity, rowversion, computed, temporal and GUID-keyed tables.
 
 ## Quick start
 

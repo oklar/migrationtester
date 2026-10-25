@@ -4,6 +4,8 @@ All notable changes to MigrationTester. Versions follow [Semantic Versioning](ht
 
 ## [Unreleased]
 
+## [0.1.0-preview.2] - 2026-10-25
+
 ### Added
 
 - New CHECK constraints get planted data when they compare one column with literals: `=`, `<>`, `!=`, `<`, `<=`, `>`, `>=`, `IN (...)` and `IS NOT NULL`, joined by `AND`, as in `[Price] > 0`, `[Status] IN (N'Open', N'Closed')` or `[Quantity] >= 1 AND [Quantity] <= 100`. One row gets a value that the column accepts before the migration but the constraint rejects, such as `0`, `N'x'` or a NULL. Other predicates, such as `LEN([Code]) = 3` or `[Start] < [End]`, are still `NotSeeded`.
@@ -43,5 +45,6 @@ First preview release.
 - Each migration runs on its planted data in a transaction that is rolled back, so a run costs about two migration runs per migration; `RebuildDatabaseForEachMigration` recreates the database for every migration instead.
 - `RequireAllScenariosSeeded` to fail migrations whose scenarios could not all be planted.
 
-[Unreleased]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.1...HEAD
+[Unreleased]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.2...HEAD
+[0.1.0-preview.2]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.1...v0.1.0-preview.2
 [0.1.0-preview.1]: https://github.com/oklar/migrationtester/releases/tag/v0.1.0-preview.1

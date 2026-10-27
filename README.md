@@ -79,6 +79,8 @@ A run migrates that database forward once. For each migration it plants the data
 | `KeepDatabase` | Leave the database in place after the run, holding the last migration's planted data and result; `report.DatabaseName` tells you which one. |
 | `RebuildDatabaseForEachMigration` | Recreate the database from empty and plant data for real for every migration. Slower; for when you suspect the transactional run behaves differently. |
 
+A context configured with `EnableRetryOnFailure` works as it is; there is no need to turn the retrying execution strategy off for the tests.
+
 ## Reading the results
 
 `RunAllAsync` and `RunRangeAsync` return a `MigrationTestReport`; `RunAsync` returns one `MigrationStepResult`.
@@ -97,9 +99,20 @@ Set `RequireAllScenariosSeeded = true` to also fail migrations with `NotSeeded` 
 
 | Call | Tests |
 |---|---|
-| `RunAllAsync(options)` | every migration, or those in `options.MigrationIds`, in EF apply order |
+| `RunAllAsync(options)` | every migration, those in `options.MigrationIds`, or those after `options.AfterMigrationId`, in EF apply order |
 | `RunRangeAsync(options, from, to)` | an inclusive slice of apply order, e.g. to split a long history across CI jobs |
 | `RunAsync(options, id)` | one migration; `id` can be the full id or the migration name |
+
+On a project with a history, older migrations may fail on data they have long since run past. Set `AfterMigrationId` to the last migration already in production, and `RunAllAsync` tests only the ones after it; with none after it yet, the report has no steps and succeeds:
+
+```csharp
+var report = await MigrationTestRunner.RunAllAsync(new MigrationTestOptions
+{
+    CreateContext = options.CreateContext,
+    AfterMigrationId = "20250601120000_AddInvoices"
+});
+report.ThrowIfFailed();
+```
 
 ## SQL Server in Docker
 
@@ -117,6 +130,8 @@ Then use `Server=127.0.0.1,1433;User Id=sa;Password=Your_password1;TrustServerCe
 - **Seeding** inserts one ordinary row per table and derives the bad rows from it. When SQL Server rejects a seed statement (an existing CHECK constraint, a trigger, a column type with no generator, a required self-referencing foreign key), those cases become `NotSeeded` with the reason, and the run carries on. Filtered unique indexes are seeded only when the filter is `IS NOT NULL` terms.
 - **New CHECK constraints** are seeded only when they compare one column with literals, as in the table above, and the column is a number (`int`, `decimal`, `money`, `float`, `bit` and the like) or a `char`/`varchar`/`nchar`/`nvarchar` string; for strings only `=`, `<>`, `<`, `>` and `IN` are used, since what sorts below or above a value depends on the collation. Anything else, such as `LEN([Code]) = 3`, `[Start] < [End]`, `OR`, or a date column, is reported as `NotSeeded`.
 - **Renames are followed within one `Up()`.** Operations after a `RenameColumn` or `RenameTable` (including a move to another schema) are planted under the N-1 names, which the scenario's `Table` and `Columns` hold. A rename done another way, such as `sp_rename` in `migrationBuilder.Sql(...)`, is not followed.
+- **Columns added earlier in the same `Up()`** cannot hold planted data, since they do not exist at N−1; the existing rows and what they get in the column are the data. A NOT NULL column with a default gets that default in every row, so a foreign key on it (EF scaffolds `Guid.Empty` or `0` for a new required relationship) is tested against it. A nullable column holds NULL in every row, even with a default, so a column added as nullable and then made NOT NULL fails unless the migration fills it in between, while foreign keys, CHECK constraints and `IS NOT NULL` filtered indexes on it are `NotApplicable`.
+- **A foreign key dropped and added again** over the same columns and principal key (as EF scaffolds for a change of delete behavior) is `NotApplicable`: the existing rows already satisfy it.
 - **Silent data loss** (e.g. `datetime2` → `date`, scale reduction, `nvarchar` → `varchar`) does not fail a migration, so it is not reported.
 - **Seed values avoid HasData ids** by starting identity counters and integer keys at 1,000,000 (30,000 for `smallint`, 100 for `tinyint`). Seed data with ids above that can still collide.
 

@@ -4,6 +4,25 @@ All notable changes to MigrationTester. Versions follow [Semantic Versioning](ht
 
 ## [Unreleased]
 
+## [0.1.0-preview.3] - 2026-10-27
+
+### Added
+
+- `MigrationTestOptions.AfterMigrationId` makes `RunAllAsync` test only the migrations after the one it names, so a project can start testing new migrations without its history, which may fail on data it has long since run past. With no migrations after it the report has no steps and succeeds. `RunRangeAsync` rejects it, as it does `MigrationIds`.
+- Tests that a context with `EnableRetryOnFailure` reports exactly what one without it reports, over every schema case.
+
+### Changed
+
+- Operations on a column added earlier in the same `Up()` are tested on what the existing rows get in it, instead of being reported as `NotSeeded` because the column does not exist at N-1:
+  - a foreign key, CHECK constraint or type change on a NOT NULL column with a default is tested against that default in the existing rows, so a new required relationship that EF scaffolds with a `Guid.Empty` or `0` default now fails when the existing rows are not filled in first;
+  - a nullable column made NOT NULL later in the migration is tested against the NULL in the existing rows, so it fails unless the migration fills the column in between;
+  - foreign keys, CHECK constraints, `IS NOT NULL` filtered indexes and type changes on a nullable new column are `NotApplicable`, since the existing rows hold NULL in it, even when it has a default;
+  - a unique index that includes a new column is planted by copying a row, as the copy gets the same NULL or default in it.
+
+  The scenario's `Name` says which columns the migration adds.
+- A foreign key dropped and added again over the same columns and principal key, as EF scaffolds for a change of delete behavior, is `NotApplicable` instead of `NotSeeded`: the existing rows already satisfy it.
+- A report with no steps reads "MigrationTester: no migrations to test."
+
 ## [0.1.0-preview.2] - 2026-10-25
 
 ### Added
@@ -45,6 +64,7 @@ First preview release.
 - Each migration runs on its planted data in a transaction that is rolled back, so a run costs about two migration runs per migration; `RebuildDatabaseForEachMigration` recreates the database for every migration instead.
 - `RequireAllScenariosSeeded` to fail migrations whose scenarios could not all be planted.
 
-[Unreleased]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.2...HEAD
+[Unreleased]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.3...HEAD
+[0.1.0-preview.3]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.2...v0.1.0-preview.3
 [0.1.0-preview.2]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.1...v0.1.0-preview.2
 [0.1.0-preview.1]: https://github.com/oklar/migrationtester/releases/tag/v0.1.0-preview.1

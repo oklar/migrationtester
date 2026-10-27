@@ -245,7 +245,8 @@ internal static class SeedSqlGenerator
 
     /// <summary>
     /// The column values that make <paramref name="scenario"/>'s migration fail. Empty when the scenario
-    /// only needs rows to exist (NOT NULL column without default) or is planted by copying a row (duplicates).
+    /// only needs rows to exist (NOT NULL column without default, or a column the migration adds itself) or is
+    /// planted by copying a row (duplicates).
     /// </summary>
     public static bool TryGetBadValues(
         MigrationScenario scenario,
@@ -255,6 +256,11 @@ internal static class SeedSqlGenerator
     {
         values = [];
         failure = null;
+        if (scenario.ExistingRowsSuffice)
+        {
+            return true;
+        }
+
         switch (scenario.Kind)
         {
             case ScenarioKind.NonNullableColumnWithNull:

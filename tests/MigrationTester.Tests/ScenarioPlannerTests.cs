@@ -778,7 +778,7 @@ public sealed class ScenarioPlannerTests
     }
 
     [Fact]
-    public void Plan_name_reused_after_a_rename_is_not_the_N_minus_1_column()
+    public void Plan_name_reused_after_a_rename_is_the_new_column()
     {
         var alter = new AlterColumnOperation { Name = "Name", Table = "People", IsNullable = false };
         alter.OldColumn.IsNullable = true;
@@ -786,6 +786,27 @@ public sealed class ScenarioPlannerTests
         [
             new RenameColumnOperation { Name = "Name", Table = "People", NewName = "FullName" },
             new AddColumnOperation { Name = "Name", Table = "People", ClrType = typeof(string), IsNullable = true },
+            alter
+        ];
+
+        var schema = TestSchema.Of(TestSchema.Table("People", TestSchema.Col("Name", "nvarchar(100)", nullable: true)));
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
+
+        // Existing rows hold NULL in the new Name column, not the N-1 Name values now in FullName.
+        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
+        Assert.True(s.ExistingRowsSuffice);
+        Assert.Equal(["Name"], s.Columns);
+    }
+
+    [Fact]
+    public void Plan_name_used_by_a_rename_is_not_the_N_minus_1_column()
+    {
+        var alter = new AlterColumnOperation { Name = "Name", Table = "People", IsNullable = false };
+        alter.OldColumn.IsNullable = true;
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new RenameColumnOperation { Name = "Name", Table = "People", NewName = "FullName" },
             alter
         ];
 
@@ -847,4 +868,258 @@ public sealed class ScenarioPlannerTests
         Assert.Equal("Customers", s.PrincipalTable);
         Assert.Equal(["Id"], s.PrincipalColumns);
     }
+
+    [Fact]
+    public void Plan_foreign_key_dropped_and_added_again_is_not_applicable()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new DropForeignKeyOperation { Name = "FK_CustomerId", Table = "Orders" },
+            ForeignKey("Orders", "CustomerId", "Customers")
+        ];
+
+        var schema = TestSchema.Of(
+            TestSchema.Table("Customers", TestSchema.Col("Id", "int")),
+            OrdersWithCustomerForeignKey());
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioStatus.NotApplicable, s.Status);
+        Assert.Contains("Existing foreign key 'FK_CustomerId'", s.Reason);
+    }
+
+    [Fact]
+    public void Plan_foreign_key_moved_to_another_principal_is_planted()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new DropForeignKeyOperation { Name = "FK_CustomerId", Table = "Orders" },
+            ForeignKey("Orders", "CustomerId", "Accounts")
+        ];
+
+        var schema = TestSchema.Of(
+            TestSchema.Table("Customers", TestSchema.Col("Id", "int")),
+            TestSchema.Table("Accounts", TestSchema.Col("Id", "int")),
+            OrdersWithCustomerForeignKey());
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
+
+        Assert.Equal(ScenarioStatus.Planted, Assert.Single(scenarios).Status);
+    }
+
+    [Fact]
+    public void Plan_foreign_key_on_column_added_as_nullable_is_not_applicable()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new AddColumnOperation { Name = "CustomerId", Table = "Orders", ClrType = typeof(int), ColumnType = "int", IsNullable = true },
+            ForeignKey("Orders", "CustomerId", "Customers")
+        ];
+
+        var scenarios = ScenarioPlanner.Plan(ops, TestSchema.WithTables("Orders", "Customers"));
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioStatus.NotApplicable, s.Status);
+        Assert.Contains("added by this migration as nullable", s.Reason);
+    }
+
+    [Fact]
+    public void Plan_foreign_key_on_column_added_with_a_default_relies_on_existing_rows()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new AddColumnOperation
+            {
+                Name = "CustomerId",
+                Table = "Orders",
+                ClrType = typeof(Guid),
+                ColumnType = "uniqueidentifier",
+                DefaultValue = Guid.Empty
+            },
+            ForeignKey("Orders", "CustomerId", "Customers")
+        ];
+
+        var scenarios = ScenarioPlanner.Plan(ops, TestSchema.WithTables("Orders", "Customers"));
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioKind.ForeignKeyOrphan, s.Kind);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
+        Assert.True(s.ExistingRowsSuffice);
+        Assert.Equal(["CustomerId"], s.Columns);
+        Assert.EndsWith("('CustomerId' added by this migration)", s.Name);
+    }
+
+    [Fact]
+    public void Plan_foreign_key_on_column_added_as_not_null_without_default_is_left_to_the_add_column()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new AddColumnOperation { Name = "CustomerId", Table = "Orders", ClrType = typeof(int), ColumnType = "int" },
+            ForeignKey("Orders", "CustomerId", "Customers")
+        ];
+
+        var scenarios = ScenarioPlanner.Plan(ops, TestSchema.WithTables("Orders", "Customers"));
+
+        Assert.Equal(2, scenarios.Count);
+        Assert.Equal(ScenarioKind.NotNullColumnAddedWithoutDefault, scenarios[0].Kind);
+        Assert.Equal(ScenarioStatus.Planted, scenarios[0].Status);
+        Assert.Equal(ScenarioStatus.NotApplicable, scenarios[1].Status);
+        Assert.Contains("NOT NULL without a default", scenarios[1].Reason);
+    }
+
+    [Fact]
+    public void Plan_foreign_key_on_column_added_then_renamed_is_the_new_column()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new AddColumnOperation { Name = "Customer", Table = "Orders", ClrType = typeof(int), ColumnType = "int", IsNullable = true },
+            new RenameColumnOperation { Name = "Customer", Table = "Orders", NewName = "CustomerId" },
+            ForeignKey("Orders", "CustomerId", "Customers")
+        ];
+
+        var scenarios = ScenarioPlanner.Plan(ops, TestSchema.WithTables("Orders", "Customers"));
+
+        Assert.Equal(ScenarioStatus.NotApplicable, Assert.Single(scenarios).Status);
+    }
+
+    [Fact]
+    public void Plan_column_added_as_nullable_then_made_required_relies_on_existing_rows()
+    {
+        var alter = new AlterColumnOperation { Name = "Code", Table = "Items", ClrType = typeof(string), ColumnType = "nvarchar(20)" };
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new AddColumnOperation { Name = "Code", Table = "Items", ClrType = typeof(string), ColumnType = "nvarchar(20)", IsNullable = true },
+            new SqlOperation { Sql = "UPDATE [Items] SET [Code] = N'x';" },
+            alter
+        ];
+
+        var scenarios = ScenarioPlanner.Plan(ops, TestSchema.WithTables("Items"));
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioKind.NonNullableColumnWithNull, s.Kind);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
+        Assert.True(s.ExistingRowsSuffice);
+    }
+
+    [Fact]
+    public void Plan_column_added_as_nullable_then_shrunk_is_not_applicable()
+    {
+        var alter = new AlterColumnOperation
+        {
+            Name = "Code", Table = "Items", ClrType = typeof(string), ColumnType = "nvarchar(10)", IsNullable = true
+        };
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new AddColumnOperation { Name = "Code", Table = "Items", ClrType = typeof(string), ColumnType = "nvarchar(20)", IsNullable = true },
+            alter
+        ];
+
+        var scenarios = ScenarioPlanner.Plan(ops, TestSchema.WithTables("Items"));
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioKind.MaxLengthExceededAfterShrink, s.Kind);
+        Assert.Equal(ScenarioStatus.NotApplicable, s.Status);
+    }
+
+    [Fact]
+    public void Plan_check_constraint_on_a_new_column_depends_on_its_default()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new AddColumnOperation { Name = "Score", Table = "Items", ClrType = typeof(int), ColumnType = "int", IsNullable = true },
+            new AddColumnOperation { Name = "Rank", Table = "Items", ClrType = typeof(int), ColumnType = "int", DefaultValue = 0 },
+            new AddCheckConstraintOperation { Name = "CK_Items_Score", Table = "Items", Sql = "[Score] > 0" },
+            new AddCheckConstraintOperation { Name = "CK_Items_Rank", Table = "Items", Sql = "[Rank] > 0" }
+        ];
+
+        var scenarios = ScenarioPlanner.Plan(ops, TestSchema.WithTables("Items"));
+
+        Assert.Equal(2, scenarios.Count);
+        Assert.Equal(ScenarioStatus.NotApplicable, scenarios[0].Status);
+        Assert.Equal(ScenarioStatus.Planted, scenarios[1].Status);
+        Assert.True(scenarios[1].ExistingRowsSuffice);
+        Assert.Equal(["Rank"], scenarios[1].Columns);
+    }
+
+    [Fact]
+    public void Plan_filtered_unique_index_on_column_added_as_nullable_is_not_applicable()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new AddColumnOperation { Name = "CustomerId", Table = "Orders", ClrType = typeof(int), ColumnType = "int", IsNullable = true },
+            new CreateIndexOperation
+            {
+                Name = "IX_Orders_CustomerId",
+                Table = "Orders",
+                Columns = ["CustomerId"],
+                IsUnique = true,
+                Filter = "[CustomerId] IS NOT NULL"
+            }
+        ];
+
+        var scenarios = ScenarioPlanner.Plan(ops, TestSchema.WithTables("Orders"));
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioStatus.NotApplicable, s.Status);
+        Assert.Contains("added by this migration as nullable", s.Reason);
+    }
+
+    [Fact]
+    public void Plan_unique_index_with_a_new_column_copies_rows_that_get_the_same_default()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new AddColumnOperation { Name = "TenantId", Table = "Users", ClrType = typeof(int), ColumnType = "int", DefaultValue = 1 },
+            new CreateIndexOperation
+            {
+                Name = "IX_Users_TenantId_Email",
+                Table = "Users",
+                Columns = ["TenantId", "Email"],
+                IsUnique = true,
+                Filter = "[Email] IS NOT NULL AND [TenantId] IS NOT NULL"
+            }
+        ];
+
+        var scenarios = ScenarioPlanner.Plan(ops, TestSchema.WithTables("Users"));
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
+        Assert.False(s.ExistingRowsSuffice);
+        Assert.Equal(["TenantId", "Email"], s.Columns);
+        Assert.Equal(["Email"], s.NotNullFilterColumns);
+    }
+
+    [Fact]
+    public void Plan_unique_index_on_a_new_computed_column_is_not_seeded()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new AddColumnOperation
+            {
+                Name = "Slug", Table = "Items", ClrType = typeof(string), ColumnType = "nvarchar(50)", ComputedColumnSql = "LOWER([Name])"
+            },
+            new CreateIndexOperation { Name = "IX_Items_Slug", Table = "Items", Columns = ["Slug"], IsUnique = true }
+        ];
+
+        var scenarios = ScenarioPlanner.Plan(ops, TestSchema.WithTables("Items"));
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioStatus.NotSeeded, s.Status);
+        Assert.Contains("filled by SQL Server", s.Reason);
+    }
+
+    private static TableMetadata OrdersWithCustomerForeignKey() => new()
+    {
+        Name = new TableName("dbo", "Orders"),
+        Columns = [TestSchema.Col("Id", "int"), TestSchema.Col("CustomerId", "int")],
+        ForeignKeys = [TestSchema.ForeignKey("CustomerId", "Customers")]
+    };
+
+    private static AddForeignKeyOperation ForeignKey(string table, string column, string principalTable) => new()
+    {
+        Name = $"FK_{table}_{principalTable}_{column}",
+        Table = table,
+        Columns = [column],
+        PrincipalTable = principalTable,
+        PrincipalColumns = ["Id"]
+    };
 }

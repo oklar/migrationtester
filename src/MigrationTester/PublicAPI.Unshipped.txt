@@ -74,6 +74,8 @@ MigrationTester.MigrationStepResult.Warnings.init -> void
 MigrationTester.MigrationTestException
 MigrationTester.MigrationTestException.FailedSteps.get -> System.Collections.Generic.IReadOnlyList<MigrationTester.MigrationStepResult!>!
 MigrationTester.MigrationTestOptions
+MigrationTester.MigrationTestOptions.AfterMigrationId.get -> string?
+MigrationTester.MigrationTestOptions.AfterMigrationId.init -> void
 MigrationTester.MigrationTestOptions.CreateContext.get -> System.Func<Microsoft.EntityFrameworkCore.DbContext!>!
 MigrationTester.MigrationTestOptions.CreateContext.init -> void
 MigrationTester.MigrationTestOptions.DatabaseName.get -> string?

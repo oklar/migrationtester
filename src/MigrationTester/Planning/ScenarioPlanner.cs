@@ -191,9 +191,18 @@ internal static class ScenarioPlanner
         }
 
         // A foreign key dropped and added again, to change its delete behavior say, finds rows that already satisfy it.
-        return SameForeignKey(table, dependent.Columns, principal) is { } existing
+        if (SameForeignKey(table, dependent.Columns, principal) is { } existing)
+        {
+            return scenario.NotApplicable(
+                $"Existing foreign key '{existing.Name}' over the same columns and principal key already keeps orphans out at N-1.");
+        }
+
+        // Moved from a table whose own key references the new principal, as from a derived type's table to its base
+        // type's. Otherwise the seeder plants a key of the old principal that the new one lacks.
+        return ForeignKeyThrough(renames.Schema, table, dependent.Columns, principal) is (var old, var onward)
             ? scenario.NotApplicable(
-                $"Existing foreign key '{existing.Name}' over the same columns and principal key already keeps orphans out at N-1.")
+                $"Existing foreign key '{old.Name}' keeps these columns to keys of '{old.PrincipalTable.Name}', whose foreign key "
+                + $"'{onward.Name}' keeps those to keys of '{principal.Name.Name}' at N-1.")
             : scenario;
     }
 
@@ -202,6 +211,41 @@ internal static class ScenarioPlanner
             k.PrincipalTable.Equals(principal.Name)
             && k.Columns.SequenceEqual(columns, StringComparer.OrdinalIgnoreCase)
             && (principal.Columns.Count == 0 || k.PrincipalColumns.SequenceEqual(principal.Columns, StringComparer.OrdinalIgnoreCase)));
+
+    /// <summary>
+    /// An existing foreign key over <paramref name="columns"/> to another table, and that table's foreign key from the
+    /// referenced key to the new principal key: the rows can only hold keys the new principal has.
+    /// </summary>
+    private static (ForeignKeyMetadata Old, ForeignKeyMetadata Onward)? ForeignKeyThrough(
+        RelationalSchemaModel schema,
+        TableMetadata table,
+        IReadOnlyList<string> columns,
+        Target principal)
+    {
+        if (principal.Columns.Count != columns.Count)
+        {
+            return null;
+        }
+
+        foreach (var old in table.ForeignKeys)
+        {
+            if (old.PrincipalColumnsFor(columns) is not { } oldKey || schema.FindTable(old.PrincipalTable) is not { } oldPrincipal)
+            {
+                continue;
+            }
+
+            var onward = oldPrincipal.ForeignKeys.FirstOrDefault(k =>
+                k.PrincipalTable.Equals(principal.Name)
+                && k.PrincipalColumnsFor(oldKey) is { } newKey
+                && newKey.SequenceEqual(principal.Columns, StringComparer.OrdinalIgnoreCase));
+            if (onward is not null)
+            {
+                return (old, onward);
+            }
+        }
+
+        return null;
+    }
 
     private static IEnumerable<MigrationScenario> AlterColumnScenarios(
         AlterColumnOperation alter,

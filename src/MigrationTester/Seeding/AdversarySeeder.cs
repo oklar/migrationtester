@@ -21,6 +21,9 @@ internal sealed class SeedResult
 /// </summary>
 internal static class AdversarySeeder
 {
+    // A row copy may need new rows in a principal table, whose copies may need new rows in its principal, and so on.
+    private const int MaxPrincipalDepth = 3;
+
     public static async Task<SeedResult> SeedAsync(
         DbConnection connection,
         RelationalSchemaModel schema,
@@ -87,51 +90,51 @@ internal static class AdversarySeeder
                 return $"the table has no row to plant data in ({why})";
             }
 
-            SeedSql statement;
-            IReadOnlyList<ColumnValue> planted = [];
             if (scenario.Kind == ScenarioKind.DuplicateUniqueIndexOrConstraint)
             {
                 if (scenario.NotNullFilterColumns.Count == 0)
                 {
-                    statement = SeedSqlGenerator.CopyRow(table, scenario.Columns, [], NextOrdinal(table.Name));
+                    return await CopyAsync(table, scenario.Columns, [], copies: 1).ConfigureAwait(false);
                 }
-                else if (SeedSqlGenerator.TryGetFilterValues(scenario, table, out var filterValues, out string? filterFailure))
-                {
-                    // Two new rows, both inside the filter; existing rows may hold NULLs other scenarios planted.
-                    statement = SeedSqlGenerator.CopyRows(
-                        table, scenario.Columns, filterValues, [NextOrdinal(table.Name), NextOrdinal(table.Name)]);
-                }
-                else
-                {
-                    return filterFailure;
-                }
+
+                // Two new rows, both inside the filter; existing rows may hold NULLs other scenarios planted.
+                return SeedSqlGenerator.TryGetFilterValues(scenario, table, out var filterValues, out string? filterFailure)
+                    ? await CopyAsync(table, scenario.Columns, filterValues, copies: 2).ConfigureAwait(false)
+                    : filterFailure;
             }
-            else if (!SeedSqlGenerator.TryGetBadValues(scenario, table, out planted, out string? failure))
+
+            if (!SeedSqlGenerator.TryGetBadValues(scenario, table, out var planted, out string? failure))
             {
                 return failure;
             }
-            else if (planted.Count == 0)
+
+            if (planted.Count == 0)
             {
                 // The baseline row is all this scenario needs.
                 return null;
             }
-            else
+
+            if (SeedSqlGenerator.ExistingForeignKey(scenario, table) is { } existing)
             {
-                // A column that already holds another scenario's bad value gets a row of its own.
-                bool columnTaken = planted.Any(v => mutatedColumns.Contains(Key(table.Name, v.Column)));
-                statement = columnTaken
-                    ? SeedSqlGenerator.CopyRow(table, [], planted, NextOrdinal(table.Name))
-                    : SeedSql.Ok(SeedSqlGenerator.UpdateOneRow(table, planted));
+                // The orphan is a key of the existing foreign key's principal that the new principal lacks. Keys seeded
+                // in different tables often match, also in the rows added for copies, so add a principal row whose key
+                // no other seeded row has.
+                string? principalFailure = schema.FindTable(existing.PrincipalTable) is { } oldPrincipal
+                    ? await AddRowWithSeparateKeyAsync(oldPrincipal, existing.PrincipalColumns).ConfigureAwait(false)
+                    : "the table does not exist at N-1";
+                if (principalFailure is not null)
+                {
+                    return $"no row with a key no other seeded row has could be added to {existing.PrincipalTable}, which "
+                        + $"'{existing.Name}' references: {principalFailure}";
+                }
             }
 
-            if (!statement.Succeeded)
-            {
-                return statement.Failure;
-            }
-
-            string? executeFailure = await TryExecuteAsync(connection, transaction, statement.Sql, sqlLog, cancellationToken)
-                .ConfigureAwait(false);
-            if (executeFailure is null)
+            // A column that already holds another scenario's bad value gets a row of its own.
+            bool columnTaken = planted.Any(v => mutatedColumns.Contains(Key(table.Name, v.Column)));
+            string? plantFailure = columnTaken
+                ? await CopyAsync(table, [], planted, copies: 1).ConfigureAwait(false)
+                : await ExecuteAsync(SeedSqlGenerator.UpdateOneRow(table, planted)).ConfigureAwait(false);
+            if (plantFailure is null)
             {
                 foreach (var v in planted)
                 {
@@ -139,8 +142,50 @@ internal static class AdversarySeeder
                 }
             }
 
-            return executeFailure;
+            return plantFailure;
         }
+
+        // Copies a row, after adding the principal rows whose keys the copies take for a unique key of foreign key columns.
+        async Task<string?> CopyAsync(
+            TableMetadata table,
+            IReadOnlyCollection<string> keep,
+            IReadOnlyList<ColumnValue> overrides,
+            int copies,
+            int depth = 0)
+        {
+            foreach (var principalName in SeedSqlGenerator.PrincipalsForCopies(table, keep, overrides))
+            {
+                string? failure = depth >= MaxPrincipalDepth ? $"principal rows are needed more than {MaxPrincipalDepth} tables away"
+                    : schema.FindTable(principalName) is { } principal ? await CopyAsync(principal, [], [], copies, depth + 1).ConfigureAwait(false)
+                    : "the table does not exist at N-1";
+                if (failure is not null)
+                {
+                    return $"no row could be added to {principalName} for a copied row to reference: {failure}";
+                }
+            }
+
+            var statement = SeedSqlGenerator.CopyRows(
+                table, keep, overrides, [.. Enumerable.Range(0, copies).Select(_ => NextOrdinal(table.Name))]);
+            return statement.Succeeded ? await ExecuteAsync(statement.Sql).ConfigureAwait(false) : statement.Failure;
+        }
+
+        async Task<string?> AddRowWithSeparateKeyAsync(TableMetadata table, IReadOnlyList<string> keyColumns)
+        {
+            if (!SeedSqlGenerator.TryGetSeparateKey(table, keyColumns, NextOrdinal(table.Name), out var key, out string? reseed, out string? failure))
+            {
+                return failure;
+            }
+
+            if (reseed is not null
+                && await TryExecuteAsync(connection, transaction, reseed, sqlLog, cancellationToken, expectRows: false).ConfigureAwait(false) is { } reseedFailure)
+            {
+                return reseedFailure;
+            }
+
+            return await CopyAsync(table, [], key, copies: 1).ConfigureAwait(false);
+        }
+
+        Task<string?> ExecuteAsync(string sql) => TryExecuteAsync(connection, transaction, sql, sqlLog, cancellationToken);
 
         int NextOrdinal(TableName table)
         {

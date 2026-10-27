@@ -51,6 +51,40 @@ internal sealed class ForeignKeyMetadata
     public required IReadOnlyList<string> Columns { get; init; }
     public required TableName PrincipalTable { get; init; }
     public required IReadOnlyList<string> PrincipalColumns { get; init; }
+
+    /// <summary>
+    /// The principal columns this key maps <paramref name="columns"/> to, in their order; null unless the key is
+    /// over exactly those columns.
+    /// </summary>
+    public IReadOnlyList<string>? PrincipalColumnsFor(IReadOnlyList<string> columns)
+    {
+        if (Columns.Count != columns.Count)
+        {
+            return null;
+        }
+
+        var result = new List<string>(columns.Count);
+        foreach (string column in columns)
+        {
+            string? principalColumn = null;
+            for (int i = 0; i < Columns.Count; i++)
+            {
+                if (string.Equals(Columns[i], column, StringComparison.OrdinalIgnoreCase))
+                {
+                    principalColumn = PrincipalColumns[i];
+                }
+            }
+
+            if (principalColumn is null)
+            {
+                return null;
+            }
+
+            result.Add(principalColumn);
+        }
+
+        return result;
+    }
 }
 
 internal sealed class TableMetadata

@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations.Builders;
 
 namespace MigrationTester.Tests.SchemaCases;
 
@@ -731,4 +733,307 @@ public sealed class AddOptionalTeamCaptain : Migration
             principalTable: "Players",
             principalColumn: "Id");
     }
+}
+
+public sealed class RepointContext(DbContextOptions<RepointContext> options) : DbContext(options);
+
+[DbContext(typeof(RepointContext))]
+[Migration("20260101000001_CreateStorageAndFleet")]
+public sealed class CreateStorageAndFleet : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.CreateTable(
+            name: "Shelves",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                Label = table.Column<string>("nvarchar(50)", maxLength: 50, nullable: false)
+            },
+            constraints: table => table.PrimaryKey("PK_Shelves", x => x.Id));
+        migrationBuilder.CreateTable(
+            name: "Racks",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                Label = table.Column<string>("nvarchar(50)", maxLength: 50, nullable: false)
+            },
+            constraints: table => table.PrimaryKey("PK_Racks", x => x.Id));
+        migrationBuilder.CreateTable(
+            name: "Boxes",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                ShelfId = table.Column<int>("int", nullable: false)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_Boxes", x => x.Id);
+                table.ForeignKey("FK_Boxes_Shelves_ShelfId", x => x.ShelfId, "Shelves", "Id", onDelete: ReferentialAction.Restrict);
+            });
+        migrationBuilder.CreateIndex(name: "IX_Boxes_ShelfId", table: "Boxes", column: "ShelfId");
+
+        // Table-per-type: a truck's key is its vehicle's key.
+        migrationBuilder.CreateTable(
+            name: "Vehicles",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                Plate = table.Column<string>("nvarchar(20)", maxLength: 20, nullable: false)
+            },
+            constraints: table => table.PrimaryKey("PK_Vehicles", x => x.Id));
+        migrationBuilder.CreateTable(
+            name: "Trucks",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false),
+                Payload = table.Column<int>("int", nullable: false)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_Trucks", x => x.Id);
+                table.ForeignKey("FK_Trucks_Vehicles_Id", x => x.Id, "Vehicles", "Id", onDelete: ReferentialAction.Cascade);
+            });
+        migrationBuilder.CreateTable(
+            name: "Trips",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                TruckId = table.Column<int>("int", nullable: false)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_Trips", x => x.Id);
+                table.ForeignKey("FK_Trips_Trucks_TruckId", x => x.TruckId, "Trucks", "Id", onDelete: ReferentialAction.Restrict);
+            });
+        migrationBuilder.CreateIndex(name: "IX_Trips_TruckId", table: "Trips", column: "TruckId");
+    }
+}
+
+// What EF scaffolds when a navigation moves to another entity and its foreign key property is renamed: the old
+// foreign key still holds while the data is planted, so the planted shelf id must be one no rack has.
+[DbContext(typeof(RepointContext))]
+[Migration("20260101000002_MoveBoxesToRacks")]
+public sealed class MoveBoxesToRacks : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.DropForeignKey(name: "FK_Boxes_Shelves_ShelfId", table: "Boxes");
+        migrationBuilder.RenameColumn(name: "ShelfId", table: "Boxes", newName: "RackId");
+        migrationBuilder.RenameIndex(name: "IX_Boxes_ShelfId", table: "Boxes", newName: "IX_Boxes_RackId");
+        migrationBuilder.AddForeignKey(
+            name: "FK_Boxes_Racks_RackId",
+            table: "Boxes",
+            column: "RackId",
+            principalTable: "Racks",
+            principalColumn: "Id",
+            onDelete: ReferentialAction.Restrict);
+    }
+}
+
+// From the derived type to its base type: every truck id is a vehicle id.
+[DbContext(typeof(RepointContext))]
+[Migration("20260101000003_AssignTripsToVehicles")]
+public sealed class AssignTripsToVehicles : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.DropForeignKey(name: "FK_Trips_Trucks_TruckId", table: "Trips");
+        migrationBuilder.RenameColumn(name: "TruckId", table: "Trips", newName: "VehicleId");
+        migrationBuilder.RenameIndex(name: "IX_Trips_TruckId", table: "Trips", newName: "IX_Trips_VehicleId");
+        migrationBuilder.AddForeignKey(
+            name: "FK_Trips_Vehicles_VehicleId",
+            table: "Trips",
+            column: "VehicleId",
+            principalTable: "Vehicles",
+            principalColumn: "Id",
+            onDelete: ReferentialAction.Restrict);
+    }
+}
+
+public sealed class JoinTableContext(DbContextOptions<JoinTableContext> options) : DbContext(options);
+
+[DbContext(typeof(JoinTableContext))]
+[Migration("20260101000001_CreateStudentsAndCourses")]
+public sealed class CreateStudentsAndCourses : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.CreateTable(
+            name: "Students",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                Name = table.Column<string>("nvarchar(50)", maxLength: 50, nullable: false)
+            },
+            constraints: table => table.PrimaryKey("PK_Students", x => x.Id));
+        migrationBuilder.CreateTable(
+            name: "Courses",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                Title = table.Column<string>("nvarchar(50)", maxLength: 50, nullable: false)
+            },
+            constraints: table => table.PrimaryKey("PK_Courses", x => x.Id));
+        migrationBuilder.CreateTable(
+            name: "Enrollments",
+            columns: table => new
+            {
+                StudentId = table.Column<int>("int", nullable: false),
+                CourseId = table.Column<int>("int", nullable: false)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_Enrollments", x => new { x.StudentId, x.CourseId });
+                table.ForeignKey("FK_Enrollments_Students_StudentId", x => x.StudentId, "Students", "Id", onDelete: ReferentialAction.Cascade);
+                table.ForeignKey("FK_Enrollments_Courses_CourseId", x => x.CourseId, "Courses", "Id", onDelete: ReferentialAction.Cascade);
+            });
+        migrationBuilder.CreateIndex(name: "IX_Enrollments_CourseId", table: "Enrollments", column: "CourseId");
+
+        // A tutor's key is its student's key, so a new tutor needs a new student.
+        migrationBuilder.CreateTable(
+            name: "Tutors",
+            columns: table => new
+            {
+                StudentId = table.Column<int>("int", nullable: false),
+                Bio = table.Column<string>("nvarchar(200)", maxLength: 200, nullable: true)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_Tutors", x => x.StudentId);
+                table.ForeignKey("FK_Tutors_Students_StudentId", x => x.StudentId, "Students", "Id", onDelete: ReferentialAction.Cascade);
+            });
+        migrationBuilder.CreateTable(
+            name: "TutorCourses",
+            columns: table => new
+            {
+                TutorId = table.Column<int>("int", nullable: false),
+                CourseId = table.Column<int>("int", nullable: false)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_TutorCourses", x => new { x.TutorId, x.CourseId });
+                table.ForeignKey("FK_TutorCourses_Tutors_TutorId", x => x.TutorId, "Tutors", "StudentId", onDelete: ReferentialAction.Cascade);
+                table.ForeignKey("FK_TutorCourses_Courses_CourseId", x => x.CourseId, "Courses", "Id", onDelete: ReferentialAction.NoAction);
+            });
+        migrationBuilder.CreateIndex(name: "IX_TutorCourses_CourseId", table: "TutorCourses", column: "CourseId");
+    }
+}
+
+// A copy of the enrollment keeps the student and needs a course the student is not enrolled in.
+[DbContext(typeof(JoinTableContext))]
+[Migration("20260101000002_LimitStudentsToOneCourse")]
+public sealed class LimitStudentsToOneCourse : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) =>
+        migrationBuilder.CreateIndex(name: "IX_Enrollments_StudentId", table: "Enrollments", column: "StudentId", unique: true);
+}
+
+// A copy keeps the course and needs another tutor, which needs another student.
+[DbContext(typeof(JoinTableContext))]
+[Migration("20260101000003_LimitCoursesToOneTutor")]
+public sealed class LimitCoursesToOneTutor : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.DropIndex(name: "IX_TutorCourses_CourseId", table: "TutorCourses");
+        migrationBuilder.CreateIndex(name: "IX_TutorCourses_CourseId", table: "TutorCourses", column: "CourseId", unique: true);
+    }
+}
+
+// Badges move from desks to employees, and each desk belongs to one employee. A new desk needs a new employee, and
+// the seeding gives both rows the same key unless the desk's key comes from a separate range.
+public sealed class DeskGuidContext(DbContextOptions<DeskGuidContext> options) : DbContext(options);
+
+public sealed class DeskIdentityContext(DbContextOptions<DeskIdentityContext> options) : DbContext(options);
+
+[DbContext(typeof(DeskGuidContext))]
+[Migration("20260101000001_CreateDesks")]
+public sealed class CreateDesksWithGuidKeys : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) => DeskMigrations.CreateDesks(migrationBuilder, guidKeys: true);
+}
+
+[DbContext(typeof(DeskGuidContext))]
+[Migration("20260101000002_MoveBadgesToEmployees")]
+public sealed class MoveGuidKeyedBadgesToEmployees : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) => DeskMigrations.MoveBadgesToEmployees(migrationBuilder);
+}
+
+[DbContext(typeof(DeskIdentityContext))]
+[Migration("20260101000001_CreateDesks")]
+public sealed class CreateDesksWithIdentityKeys : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) => DeskMigrations.CreateDesks(migrationBuilder, guidKeys: false);
+}
+
+[DbContext(typeof(DeskIdentityContext))]
+[Migration("20260101000002_MoveBadgesToEmployees")]
+public sealed class MoveIdentityKeyedBadgesToEmployees : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) => DeskMigrations.MoveBadgesToEmployees(migrationBuilder);
+}
+
+internal static class DeskMigrations
+{
+    public static void CreateDesks(MigrationBuilder migrationBuilder, bool guidKeys)
+    {
+        migrationBuilder.CreateTable(
+            name: "Employees",
+            columns: table => new
+            {
+                Id = Key(table, guidKeys),
+                Name = table.Column<string>("nvarchar(50)", maxLength: 50, nullable: false)
+            },
+            constraints: table => table.PrimaryKey("PK_Employees", x => x.Id));
+        migrationBuilder.CreateTable(
+            name: "Desks",
+            columns: table => new
+            {
+                Id = Key(table, guidKeys),
+                EmployeeId = Reference(table, guidKeys)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_Desks", x => x.Id);
+                table.ForeignKey("FK_Desks_Employees_EmployeeId", x => x.EmployeeId, "Employees", "Id", onDelete: ReferentialAction.Cascade);
+            });
+        migrationBuilder.CreateIndex(name: "IX_Desks_EmployeeId", table: "Desks", column: "EmployeeId", unique: true);
+        migrationBuilder.CreateTable(
+            name: "Badges",
+            columns: table => new
+            {
+                Id = Key(table, guidKeys),
+                DeskId = Reference(table, guidKeys)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_Badges", x => x.Id);
+                table.ForeignKey("FK_Badges_Desks_DeskId", x => x.DeskId, "Desks", "Id", onDelete: ReferentialAction.Cascade);
+            });
+        migrationBuilder.CreateIndex(name: "IX_Badges_DeskId", table: "Badges", column: "DeskId");
+    }
+
+    public static void MoveBadgesToEmployees(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.DropForeignKey(name: "FK_Badges_Desks_DeskId", table: "Badges");
+        migrationBuilder.RenameColumn(name: "DeskId", table: "Badges", newName: "EmployeeId");
+        migrationBuilder.RenameIndex(name: "IX_Badges_DeskId", table: "Badges", newName: "IX_Badges_EmployeeId");
+        migrationBuilder.AddForeignKey(
+            name: "FK_Badges_Employees_EmployeeId",
+            table: "Badges",
+            column: "EmployeeId",
+            principalTable: "Employees",
+            principalColumn: "Id",
+            onDelete: ReferentialAction.NoAction);
+    }
+
+    private static OperationBuilder<AddColumnOperation> Key(ColumnsBuilder table, bool guid) => guid
+        ? table.Column<Guid>("uniqueidentifier", nullable: false)
+        : table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1");
+
+    private static OperationBuilder<AddColumnOperation> Reference(ColumnsBuilder table, bool guid) => guid
+        ? table.Column<Guid>("uniqueidentifier", nullable: false)
+        : table.Column<int>("int", nullable: false);
 }

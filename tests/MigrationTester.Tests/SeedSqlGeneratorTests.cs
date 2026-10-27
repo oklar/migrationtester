@@ -171,20 +171,73 @@ public sealed class SeedSqlGeneratorTests
     }
 
     [Fact]
-    public void CopyRow_fails_when_unique_key_can_only_change_through_foreign_keys()
+    public void CopyRow_takes_a_principal_key_no_row_references_when_the_unique_key_is_all_foreign_key_columns()
+    {
+        var postTags = PostTags();
+
+        var sql = SeedSqlGenerator.CopyRow(postTags, ["PostId"], [], ordinal: 2);
+
+        Assert.Equal(
+            "INSERT INTO [dbo].[PostTags] ([PostId], [TagId]) SELECT TOP (1) [PostId], "
+            + "(SELECT [p].[Id] FROM [dbo].[Tags] AS [p] WHERE NOT EXISTS (SELECT 1 FROM [dbo].[PostTags] AS [d] WHERE [d].[TagId] = [p].[Id]) "
+            + "ORDER BY [p].[Id] OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY) FROM [dbo].[PostTags];",
+            sql.Sql);
+        Assert.Equal([new TableName("dbo", "Tags")], SeedSqlGenerator.PrincipalsForCopies(postTags, ["PostId"], []));
+    }
+
+    [Fact]
+    public void CopyRows_take_a_different_unreferenced_principal_key_per_copy()
+    {
+        var sql = SeedSqlGenerator.CopyRows(PostTags(), ["TagId"], [], [2, 3]);
+
+        Assert.True(sql.Succeeded, sql.Failure);
+        Assert.Contains("CASE [n].[k] WHEN 1 THEN (SELECT [p].[Id] FROM [dbo].[Posts] AS [p]", sql.Sql, StringComparison.Ordinal);
+        Assert.Contains("OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY) WHEN 2 THEN (SELECT [p].[Id] FROM [dbo].[Posts]", sql.Sql, StringComparison.Ordinal);
+        Assert.Contains("OFFSET 1 ROWS FETCH NEXT 1 ROWS ONLY) END, [s].[TagId]", sql.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CopyRow_prefers_a_column_outside_foreign_keys_and_needs_no_principal_rows()
     {
         var postTags = new TableMetadata
         {
             Name = new TableName("dbo", "PostTags"),
-            Columns = [Col("PostId", "int"), Col("TagId", "int")],
-            UniqueKeys = [PrimaryKey("PostId", "TagId")],
+            Columns = [Col("PostId", "int"), Col("TagId", "int"), Col("Position", "int")],
+            UniqueKeys = [PrimaryKey("PostId", "TagId", "Position")],
             ForeignKeys = [ForeignKey("PostId", "Posts"), ForeignKey("TagId", "Tags")]
         };
 
         var sql = SeedSqlGenerator.CopyRow(postTags, [], [], ordinal: 2);
 
+        Assert.Equal("INSERT INTO [dbo].[PostTags] ([PostId], [TagId], [Position]) SELECT TOP (1) [PostId], [TagId], 1000002 FROM [dbo].[PostTags];", sql.Sql);
+        Assert.Empty(SeedSqlGenerator.PrincipalsForCopies(postTags, [], []));
+    }
+
+    [Fact]
+    public void CopyRow_fails_when_unique_key_can_only_change_through_a_foreign_key_over_several_columns()
+    {
+        var grades = new TableMetadata
+        {
+            Name = new TableName("dbo", "Grades"),
+            Columns = [Col("StudentId", "int"), Col("CourseId", "int"), Col("Mark", "int")],
+            UniqueKeys = [PrimaryKey("StudentId", "CourseId")],
+            ForeignKeys =
+            [
+                new ForeignKeyMetadata
+                {
+                    Name = "FK_Grades_Enrollments",
+                    Columns = ["StudentId", "CourseId"],
+                    PrincipalTable = new TableName("dbo", "Enrollments"),
+                    PrincipalColumns = ["StudentId", "CourseId"]
+                }
+            ]
+        };
+
+        var sql = SeedSqlGenerator.CopyRow(grades, ["StudentId"], [], ordinal: 2);
+
         Assert.False(sql.Succeeded);
         Assert.Contains("'PK'", sql.Failure);
+        Assert.Empty(SeedSqlGenerator.PrincipalsForCopies(grades, ["StudentId"], []));
     }
 
     [Fact]
@@ -296,6 +349,144 @@ public sealed class SeedSqlGeneratorTests
     }
 
     [Fact]
+    public void TryGetBadValues_orphan_for_a_column_with_a_foreign_key_to_another_table_is_a_key_of_that_table()
+    {
+        // The rows hold shelf ids, which the old foreign key keeps; one the racks do not have breaks the new one.
+        var boxes = new TableMetadata
+        {
+            Name = new TableName("dbo", "Boxes"),
+            Columns = [Col("Id", "int", identity: true), Col("ShelfId", "int")],
+            ForeignKeys = [ForeignKey("ShelfId", "Shelves")]
+        };
+        var scenario = Scenario(ScenarioKind.ForeignKeyOrphan, "ShelfId") with
+        {
+            Table = "Boxes", PrincipalSchema = "dbo", PrincipalTable = "Racks", PrincipalColumns = ["Id"]
+        };
+
+        Assert.Equal("FK_ShelfId", SeedSqlGenerator.ExistingForeignKey(scenario, boxes)?.Name);
+        Assert.True(SeedSqlGenerator.TryGetBadValues(scenario, boxes, out var values, out _));
+        const string shelfNoRackHas =
+            "(SELECT TOP (1) [p].[Id] FROM [dbo].[Shelves] AS [p] WHERE NOT EXISTS (SELECT 1 FROM [dbo].[Racks] AS [n] WHERE [n].[Id] = [p].[Id]) ORDER BY [p].[Id])";
+        Assert.Equal([new ColumnValue("ShelfId", shelfNoRackHas, Lookup: true)], values);
+
+        // When no shelf qualifies the statement plants nothing, instead of NULL.
+        Assert.Equal(
+            $"UPDATE TOP (1) [dbo].[Boxes] SET [ShelfId] = {shelfNoRackHas} WHERE {shelfNoRackHas} IS NOT NULL;",
+            SeedSqlGenerator.UpdateOneRow(boxes, values));
+        Assert.Equal(
+            $"INSERT INTO [dbo].[Boxes] ([ShelfId]) SELECT TOP (1) {shelfNoRackHas} FROM [dbo].[Boxes] WHERE {shelfNoRackHas} IS NOT NULL;",
+            SeedSqlGenerator.CopyRow(boxes, [], values, ordinal: 2).Sql);
+    }
+
+    [Fact]
+    public void TryGetBadValues_orphan_matches_the_existing_foreign_key_columns_by_name()
+    {
+        var parts = new TableMetadata
+        {
+            Name = new TableName("dbo", "Parts"),
+            Columns = [Col("Id", "int", identity: true), Col("Region", "int"), Col("Code", "int")],
+            ForeignKeys =
+            [
+                new ForeignKeyMetadata
+                {
+                    Name = "FK_Parts_Catalog",
+                    Columns = ["Region", "Code"],
+                    PrincipalTable = new TableName("dbo", "Catalog"),
+                    PrincipalColumns = ["CatalogRegion", "CatalogCode"]
+                }
+            ]
+        };
+        var scenario = new MigrationScenario
+        {
+            Kind = ScenarioKind.ForeignKeyOrphan,
+            Name = "test",
+            Table = "Parts",
+            Columns = ["Code", "Region"],
+            PrincipalSchema = "dbo",
+            PrincipalTable = "Stock",
+            PrincipalColumns = ["StockCode", "StockRegion"]
+        };
+
+        Assert.True(SeedSqlGenerator.TryGetBadValues(scenario, parts, out var values, out _));
+
+        Assert.Equal(["Code", "Region"], values.Select(static v => v.Column));
+        Assert.StartsWith("(SELECT TOP (1) [p].[CatalogCode] FROM [dbo].[Catalog]", values[0].Value, StringComparison.Ordinal);
+        Assert.StartsWith("(SELECT TOP (1) [p].[CatalogRegion] FROM [dbo].[Catalog]", values[1].Value, StringComparison.Ordinal);
+        Assert.All(values, v => Assert.Contains(
+            "WHERE [n].[StockCode] = [p].[CatalogCode] AND [n].[StockRegion] = [p].[CatalogRegion]) ORDER BY [p].[CatalogCode], [p].[CatalogRegion])",
+            v.Value,
+            StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("int", 2, "2000002")]
+    [InlineData("bigint", 2, "2000002")]
+    [InlineData("smallint", 2, "32002")]
+    [InlineData("tinyint", 2, "202")]
+    [InlineData("tinyint", 60, null)]
+    [InlineData("decimal(10,0)", 3, "2000003")]
+    [InlineData("decimal(6,0)", 2, null)]
+    [InlineData("uniqueidentifier", 2, "'00000000-0000-0000-0001-000000000002'")]
+    [InlineData("nvarchar(10)", 2, "N'w2'")]
+    [InlineData("nchar(2)", 2, "N'w2'")]
+    [InlineData("nchar(1)", 2, null)]
+    [InlineData("date", 2, null)]
+    public void SeparateKeyValue_stays_clear_of_ordinary_seed_keys(string type, int ordinal, string? expected)
+    {
+        Assert.Equal(expected, SqlLiterals.SeparateKeyValue(SqlType.Parse(type)!.Value, ordinal));
+    }
+
+    [Fact]
+    public void TryGetSeparateKey_gives_a_guid_key_a_value_no_ordinary_row_has()
+    {
+        var desks = Desks("uniqueidentifier", identity: false);
+
+        Assert.True(SeedSqlGenerator.TryGetSeparateKey(desks, ["Id"], 2, out var values, out string? reseed, out _));
+
+        var key = Assert.Single(values);
+        Assert.Equal(new ColumnValue("Id", "'00000000-0000-0000-0001-000000000002'", Unique: true), key);
+        Assert.Null(reseed);
+
+        // The key needs no other new value; the unique foreign key to Employees takes a new employee's key.
+        Assert.Equal(
+            "INSERT INTO [dbo].[Desks] ([Id], [EmployeeId]) SELECT TOP (1) '00000000-0000-0000-0001-000000000002', "
+            + "(SELECT [p].[Id] FROM [dbo].[Employees] AS [p] WHERE NOT EXISTS (SELECT 1 FROM [dbo].[Desks] AS [d] WHERE [d].[EmployeeId] = [p].[Id]) "
+            + "ORDER BY [p].[Id] OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY) FROM [dbo].[Desks];",
+            SeedSqlGenerator.CopyRow(desks, [], values, ordinal: 3).Sql);
+        Assert.Equal([new TableName("dbo", "Employees")], SeedSqlGenerator.PrincipalsForCopies(desks, [], values));
+    }
+
+    [Fact]
+    public void TryGetSeparateKey_reseeds_an_identity_key_past_ordinary_seed_rows()
+    {
+        var desks = Desks("int", identity: true);
+
+        Assert.True(SeedSqlGenerator.TryGetSeparateKey(desks, ["Id"], 2, out var values, out string? reseed, out _));
+
+        Assert.Empty(values);
+        Assert.Equal(
+            "IF IDENT_CURRENT(N'[dbo].[Desks]') < 2000000 DBCC CHECKIDENT (N'[dbo].[Desks]', RESEED, 2000000) WITH NO_INFOMSGS;",
+            reseed);
+    }
+
+    [Theory]
+    [InlineData("EmployeeId", "int", "'EmployeeId' is a foreign key column")]
+    [InlineData("Code", "nchar(1)", "no such value can be generated for column 'Code' of type nchar(1)")]
+    [InlineData("Missing", "int", "'Missing' does not exist at N-1")]
+    public void TryGetSeparateKey_fails_for_a_column_that_cannot_get_a_separate_value(string column, string type, string reason)
+    {
+        var desks = new TableMetadata
+        {
+            Name = new TableName("dbo", "Desks"),
+            Columns = [Col("Id", "int"), Col("EmployeeId", "int"), Col("Code", type)],
+            ForeignKeys = [ForeignKey("EmployeeId", "Employees")]
+        };
+
+        Assert.False(SeedSqlGenerator.TryGetSeparateKey(desks, [column], 2, out _, out _, out string? failure));
+        Assert.Contains(reason, failure);
+    }
+
+    [Fact]
     public void TryGetBadValues_conversion_uses_the_planned_value()
     {
         var table = Table("Measurements", Col("Quantity", "int"));
@@ -336,4 +527,20 @@ public sealed class SeedSqlGeneratorTests
 
     private static MigrationScenario Scenario(ScenarioKind kind, string column) =>
         new() { Kind = kind, Name = "test", Table = "T", Columns = [column] };
+
+    private static TableMetadata Desks(string keyType, bool identity) => new()
+    {
+        Name = new TableName("dbo", "Desks"),
+        Columns = [Col("Id", keyType, identity: identity), Col("EmployeeId", keyType)],
+        UniqueKeys = [PrimaryKey("Id"), Unique("IX_Desks_EmployeeId", "EmployeeId")],
+        ForeignKeys = [ForeignKey("EmployeeId", "Employees")]
+    };
+
+    private static TableMetadata PostTags() => new()
+    {
+        Name = new TableName("dbo", "PostTags"),
+        Columns = [Col("PostId", "int"), Col("TagId", "int")],
+        UniqueKeys = [PrimaryKey("PostId", "TagId")],
+        ForeignKeys = [ForeignKey("PostId", "Posts"), ForeignKey("TagId", "Tags")]
+    };
 }

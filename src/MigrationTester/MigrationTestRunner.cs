@@ -10,7 +10,10 @@ namespace MigrationTester;
 /// </summary>
 public static class MigrationTestRunner
 {
-    /// <summary>Tests every migration, or those in <see cref="MigrationTestOptions.MigrationIds"/>, in EF apply order.</summary>
+    /// <summary>
+    /// Tests every migration, those in <see cref="MigrationTestOptions.MigrationIds"/>, or those after
+    /// <see cref="MigrationTestOptions.AfterMigrationId"/>, in EF apply order.
+    /// </summary>
     public static async Task<MigrationTestReport> RunAllAsync(
         MigrationTestOptions options,
         CancellationToken cancellationToken = default)
@@ -21,14 +24,24 @@ public static class MigrationTestRunner
             throw new ArgumentException("MigrationIds, when set, must not be empty.", nameof(options));
         }
 
-        return await RunStepsAsync(options, context => SelectMigrations(context, options.MigrationIds), cancellationToken)
+        if (options.MigrationIds is not null && options.AfterMigrationId is not null)
+        {
+            throw new ArgumentException("MigrationIds cannot be combined with AfterMigrationId.", nameof(options));
+        }
+
+        return await RunStepsAsync(
+                options,
+                context => options.AfterMigrationId is { } after
+                    ? SelectAfter(context, after)
+                    : SelectMigrations(context, options.MigrationIds),
+                cancellationToken)
             .ConfigureAwait(false);
     }
 
     /// <summary>
     /// Tests the migrations from <paramref name="fromMigrationId"/> through <paramref name="toMigrationId"/>
     /// (inclusive, in EF apply order), e.g. to split a long history across CI jobs.
-    /// Cannot be combined with <see cref="MigrationTestOptions.MigrationIds"/>.
+    /// Cannot be combined with <see cref="MigrationTestOptions.MigrationIds"/> or <see cref="MigrationTestOptions.AfterMigrationId"/>.
     /// </summary>
     public static async Task<MigrationTestReport> RunRangeAsync(
         MigrationTestOptions options,
@@ -42,6 +55,11 @@ public static class MigrationTestRunner
         if (options.MigrationIds is not null)
         {
             throw new ArgumentException("RunRangeAsync cannot be combined with MigrationTestOptions.MigrationIds.", nameof(options));
+        }
+
+        if (options.AfterMigrationId is not null)
+        {
+            throw new ArgumentException("RunRangeAsync cannot be combined with MigrationTestOptions.AfterMigrationId.", nameof(options));
         }
 
         return await RunStepsAsync(options, context => SelectRange(context, fromMigrationId, toMigrationId), cancellationToken)
@@ -82,6 +100,12 @@ public static class MigrationTestRunner
             MigrationReader.EnsureSqlServer(context);
             migrationIds = selectMigrations(context);
             database = TestDatabase.For(context, options.DatabaseName);
+        }
+
+        if (migrationIds.Count == 0)
+        {
+            // Nothing after AfterMigrationId: no database is created, so there is none to drop or keep.
+            return new MigrationTestReport { Steps = [], DatabaseName = database.Name };
         }
 
         var steps = new List<MigrationStepResult>(migrationIds.Count);
@@ -133,6 +157,13 @@ public static class MigrationTestRunner
 
         // EF apply order, not the order of MigrationIds.
         return [.. all.Where(selected.Contains)];
+    }
+
+    private static IReadOnlyList<string> SelectAfter(DbContext context, string after)
+    {
+        var all = MigrationReader.GetMigrationIds(context);
+        int cutoff = all.IndexOf(MigrationReader.Resolve(context, after));
+        return all.GetRange(cutoff + 1, all.Count - cutoff - 1);
     }
 
     private static IReadOnlyList<string> SelectRange(DbContext context, string from, string to)

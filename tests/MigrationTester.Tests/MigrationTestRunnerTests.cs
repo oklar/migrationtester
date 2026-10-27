@@ -10,7 +10,8 @@ public sealed class MigrationTestRunnerTests
     internal static MigrationTestOptions Options(
         string? databaseName = null,
         bool keepDatabase = false,
-        IReadOnlyList<string>? migrationIds = null) =>
+        IReadOnlyList<string>? migrationIds = null,
+        string? afterMigrationId = null) =>
         new()
         {
             CreateContext = () => new TestDbContext(new DbContextOptionsBuilder<TestDbContext>()
@@ -18,7 +19,8 @@ public sealed class MigrationTestRunnerTests
                 .Options),
             DatabaseName = databaseName,
             KeepDatabase = keepDatabase,
-            MigrationIds = migrationIds
+            MigrationIds = migrationIds,
+            AfterMigrationId = afterMigrationId
         };
 
     [Fact]

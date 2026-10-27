@@ -253,6 +253,16 @@ public sealed class SeedSqlGeneratorTests
     }
 
     [Fact]
+    public void TryGetBadValues_plants_nothing_when_existing_rows_suffice()
+    {
+        var table = Table("Orders", Col("Id", "int"));
+        var scenario = Scenario(ScenarioKind.ForeignKeyOrphan, "CustomerId") with { ExistingRowsSuffice = true };
+
+        Assert.True(SeedSqlGenerator.TryGetBadValues(scenario, table, out var values, out _));
+        Assert.Empty(values);
+    }
+
+    [Fact]
     public void TryGetBadValues_long_value_is_one_longer_than_new_max_and_fits_old_column()
     {
         var table = Table("Products", Col("Code", "nvarchar(100)"));

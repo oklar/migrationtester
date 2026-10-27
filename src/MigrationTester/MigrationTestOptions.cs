@@ -19,6 +19,14 @@ public sealed class MigrationTestOptions
     public IReadOnlyList<string>? MigrationIds { get; init; }
 
     /// <summary>
+    /// Makes <see cref="MigrationTestRunner.RunAllAsync"/> test only the migrations after this one (full id or
+    /// name, itself not included), e.g. the last migration already in production, so a history that predates
+    /// the tests is not tested again. With no migrations after it the report has no steps and succeeds.
+    /// Cannot be combined with <see cref="MigrationIds"/>.
+    /// </summary>
+    public string? AfterMigrationId { get; init; }
+
+    /// <summary>
     /// The database the runner drops and recreates for every migration. Null (the default) uses a throwaway
     /// database named after the connection string's database plus a random suffix, dropped when the run ends.
     /// Only set this to a database you are happy to lose.

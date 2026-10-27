@@ -75,6 +75,12 @@ public sealed record MigrationScenario
     /// <summary>For filtered unique indexes: columns the filter requires to be non-NULL.</summary>
     internal IReadOnlyList<string> NotNullFilterColumns { get; init; } = [];
 
+    /// <summary>
+    /// The column is added earlier in the same migration, and what existing rows get in it (NULL or its default)
+    /// is the data: the table's baseline row is all the scenario needs.
+    /// </summary>
+    internal bool ExistingRowsSuffice { get; init; }
+
     internal MigrationScenario NotApplicable(string reason) => this with { Status = ScenarioStatus.NotApplicable, Reason = reason };
 
     internal MigrationScenario NotSeeded(string reason) => this with { Status = ScenarioStatus.NotSeeded, Reason = reason };

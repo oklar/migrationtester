@@ -588,3 +588,147 @@ public sealed class MoveMembersToCrmWithUniqueName : Migration
         migrationBuilder.CreateIndex("IX_Subscribers_DisplayName", "Subscribers", "DisplayName", schema: "crm", unique: true);
     }
 }
+
+public sealed class NewColumnContext(DbContextOptions<NewColumnContext> options) : DbContext(options);
+
+[DbContext(typeof(NewColumnContext))]
+[Migration("20260101000001_CreateTeamsAndPlayers")]
+public sealed class CreateTeamsAndPlayers : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.CreateTable(
+            name: "Coaches",
+            columns: table => new
+            {
+                Id = table.Column<Guid>("uniqueidentifier", nullable: false),
+                Name = table.Column<string>("nvarchar(50)", maxLength: 50, nullable: false)
+            },
+            constraints: table => table.PrimaryKey("PK_Coaches", x => x.Id));
+        migrationBuilder.CreateTable(
+            name: "Teams",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                Name = table.Column<string>("nvarchar(50)", maxLength: 50, nullable: false)
+            },
+            constraints: table => table.PrimaryKey("PK_Teams", x => x.Id));
+        migrationBuilder.CreateTable(
+            name: "Players",
+            columns: table => new
+            {
+                Id = table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1"),
+                Name = table.Column<string>("nvarchar(50)", maxLength: 50, nullable: false),
+                TeamId = table.Column<int>("int", nullable: false)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_Players", x => x.Id);
+                table.ForeignKey("FK_Players_Teams_TeamId", x => x.TeamId, "Teams", "Id", onDelete: ReferentialAction.Restrict);
+            });
+    }
+}
+
+// What EF scaffolds for changing a relationship's delete behavior: the same foreign key, dropped and added again.
+[DbContext(typeof(NewColumnContext))]
+[Migration("20260101000002_CascadePlayerTeam")]
+public sealed class CascadePlayerTeam : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.DropForeignKey(name: "FK_Players_Teams_TeamId", table: "Players");
+        migrationBuilder.AddForeignKey(
+            name: "FK_Players_Teams_TeamId",
+            table: "Players",
+            column: "TeamId",
+            principalTable: "Teams",
+            principalColumn: "Id",
+            onDelete: ReferentialAction.Cascade);
+    }
+}
+
+// What EF scaffolds for a new required relationship: existing rows get Guid.Empty, which no coach has.
+[DbContext(typeof(NewColumnContext))]
+[Migration("20260101000003_AddRequiredPlayerCoach")]
+public sealed class AddRequiredPlayerCoach : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.AddColumn<Guid>(
+            name: "CoachId",
+            table: "Players",
+            type: "uniqueidentifier",
+            nullable: false,
+            defaultValue: new Guid("00000000-0000-0000-0000-000000000000"));
+        migrationBuilder.CreateIndex(name: "IX_Players_CoachId", table: "Players", column: "CoachId");
+        migrationBuilder.AddForeignKey(
+            name: "FK_Players_Coaches_CoachId",
+            table: "Players",
+            column: "CoachId",
+            principalTable: "Coaches",
+            principalColumn: "Id",
+            onDelete: ReferentialAction.Cascade);
+    }
+}
+
+[DbContext(typeof(NewColumnContext))]
+[Migration("20260101000004_AddRequiredPlayerNumberWithoutBackfill")]
+public sealed class AddRequiredPlayerNumberWithoutBackfill : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.AddColumn<int>(name: "Number", table: "Players", type: "int", nullable: true);
+        migrationBuilder.AlterColumn<int>(
+            name: "Number",
+            table: "Players",
+            type: "int",
+            nullable: false,
+            oldClrType: typeof(int),
+            oldType: "int",
+            oldNullable: true);
+    }
+}
+
+[DbContext(typeof(NewColumnContext))]
+[Migration("20260101000005_AddRequiredPlayerNicknameWithBackfill")]
+public sealed class AddRequiredPlayerNicknameWithBackfill : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.AddColumn<string>(name: "Nickname", table: "Players", type: "nvarchar(50)", maxLength: 50, nullable: true);
+        migrationBuilder.Sql("UPDATE [Players] SET [Nickname] = [Name];");
+        migrationBuilder.AlterColumn<string>(
+            name: "Nickname",
+            table: "Players",
+            type: "nvarchar(50)",
+            maxLength: 50,
+            nullable: false,
+            oldClrType: typeof(string),
+            oldType: "nvarchar(50)",
+            oldMaxLength: 50,
+            oldNullable: true);
+    }
+}
+
+// SQL Server leaves NULL in the existing rows of a new nullable column, even one with a default.
+[DbContext(typeof(NewColumnContext))]
+[Migration("20260101000006_AddOptionalTeamCaptain")]
+public sealed class AddOptionalTeamCaptain : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.AddColumn<int>(name: "CaptainId", table: "Teams", type: "int", nullable: true, defaultValue: -1);
+        migrationBuilder.CreateIndex(
+            name: "IX_Teams_CaptainId",
+            table: "Teams",
+            column: "CaptainId",
+            unique: true,
+            filter: "[CaptainId] IS NOT NULL");
+        migrationBuilder.AddForeignKey(
+            name: "FK_Teams_Players_CaptainId",
+            table: "Teams",
+            column: "CaptainId",
+            principalTable: "Players",
+            principalColumn: "Id");
+    }
+}

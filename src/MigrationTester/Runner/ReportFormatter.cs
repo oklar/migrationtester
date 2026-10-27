@@ -9,6 +9,11 @@ internal static class ReportFormatter
 {
     public static string Report(MigrationTestReport report)
     {
+        if (report.Steps.Count == 0)
+        {
+            return "MigrationTester: no migrations to test.";
+        }
+
         var sb = new StringBuilder();
         int failed = report.Steps.Count(static s => !s.Succeeded);
         sb.Append(failed == 0

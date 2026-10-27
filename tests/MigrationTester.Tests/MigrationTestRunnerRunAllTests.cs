@@ -56,6 +56,44 @@ public sealed class MigrationTestRunnerRunAllTests
     }
 
     [Fact]
+    public async Task AfterMigrationId_tests_only_the_later_migrations()
+    {
+        var report = await MigrationTestRunner.RunAllAsync(Options(afterMigrationId: "AddUniqueCode"), Ct);
+
+        Assert.Equal("20260319190000_AddDescription", Assert.Single(report.Steps).MigrationId);
+        Assert.True(report.Succeeded, report.ToString());
+    }
+
+    [Fact]
+    public async Task AfterMigrationId_of_the_last_migration_tests_nothing_and_succeeds()
+    {
+        var report = await MigrationTestRunner.RunAllAsync(
+            Options(keepDatabase: true, afterMigrationId: "20260319190000_AddDescription"), Ct);
+
+        Assert.Empty(report.Steps);
+        Assert.True(report.Succeeded);
+        Assert.False(report.DatabaseKept);
+        Assert.Equal("MigrationTester: no migrations to test.", report.ToString());
+        Assert.False(await TestSqlServerConfig.DatabaseExistsAsync(report.DatabaseName, Ct));
+    }
+
+    [Fact]
+    public async Task AfterMigrationId_must_name_a_migration()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            MigrationTestRunner.RunAllAsync(Options(afterMigrationId: "NoSuchMigration"), Ct));
+    }
+
+    [Fact]
+    public async Task AfterMigrationId_cannot_be_combined_with_MigrationIds_or_a_range()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            MigrationTestRunner.RunAllAsync(Options(migrationIds: ["AddDescription"], afterMigrationId: "Initial"), Ct));
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            MigrationTestRunner.RunRangeAsync(Options(afterMigrationId: "Initial"), "Initial", "AddUniqueCode", Ct));
+    }
+
+    [Fact]
     public async Task Throwaway_database_is_named_after_the_configured_one_and_dropped()
     {
         var report = await MigrationTestRunner.RunAllAsync(Options(migrationIds: ["Initial"]), Ct);

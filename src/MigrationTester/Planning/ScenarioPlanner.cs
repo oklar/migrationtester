@@ -7,7 +7,9 @@ namespace MigrationTester.Planning;
 /// Maps <see cref="MigrationOperation"/> instances to adversarial scenarios (deterministic).
 /// Facts about the column before the migration come from the live N-1 schema when it has them,
 /// otherwise from the operation's <c>OldColumn</c>. Names renamed earlier in the same <c>Up()</c> map back to
-/// their N-1 names (see <see cref="RenameMap"/>), which the scenarios hold.
+/// their N-1 names (see <see cref="RenameMap"/>), which the scenarios hold. A column added earlier in the same
+/// <c>Up()</c> has no N-1 name: the rows that exist when it is added get NULL or its default in it, and those rows
+/// are the data its scenarios test.
 /// </summary>
 internal static class ScenarioPlanner
 {
@@ -52,6 +54,8 @@ internal static class ScenarioPlanner
                     {
                         list.Add(addColScenario);
                     }
+
+                    renames.Add(addCol);
                     break;
                 case AddPrimaryKeyOperation pk:
                     list.Add(Duplicate(
@@ -81,11 +85,21 @@ internal static class ScenarioPlanner
 
         // Duplicates only count where the filter holds, so the seeded copies get non-NULL filter columns.
         // Key and filter columns map back to N-1 together; the key columns come first.
-        string[] keyColumns = idx.Columns ?? [];
-        var target = Target.Of(renames, idx.Schema, idx.Table, [.. keyColumns, .. filterColumns]);
-        return Duplicate(name, idx, target with { Columns = target.Columns.Take(keyColumns.Length).ToList() }, notNullFiltered: true) with
+        int keyCount = (idx.Columns ?? []).Length;
+        var target = Target.Of(renames, idx.Schema, idx.Table, [.. idx.Columns ?? [], .. filterColumns]);
+        var key = target with { Columns = [.. target.Columns.Take(keyCount)], New = [.. target.New.Take(keyCount)] };
+        var scenario = Duplicate(name, idx, key, notNullFiltered: true);
+
+        // A filter column this migration adds holds what the existing rows get in it; NULL leaves them out of the index.
+        var filterNew = target.New.Skip(keyCount).OfType<NewColumn>().ToList();
+        if (scenario.Status == ScenarioStatus.Planted && Unplantable(scenario, filterNew, nullBreaks: false) is { } outside)
         {
-            NotNullFilterColumns = target.Columns.Skip(keyColumns.Length).ToList()
+            return outside;
+        }
+
+        return scenario with
+        {
+            NotNullFilterColumns = [.. target.Columns.Skip(keyCount).Where((_, i) => target.New[keyCount + i] is null)]
         };
     }
 
@@ -118,6 +132,13 @@ internal static class ScenarioPlanner
         if (target.RenamedAwayReason is { } renamedAway)
         {
             return scenario.NotSeeded(renamedAway);
+        }
+
+        // Copies of a row get the same NULL or default in a key column this migration adds as the original;
+        // NULLs count as equal in a unique index.
+        if (Unplantable(scenario, target.Added, nullBreaks: true) is { } unplantable)
+        {
+            return unplantable;
         }
 
         return AlreadyUnique(table, target.Columns, notNullFiltered) is { } existing
@@ -154,13 +175,33 @@ internal static class ScenarioPlanner
             SourceOperation = fk
         };
 
-        if (dependent.Table is null || principal.Table is null)
+        if (dependent.Table is not { } table || principal.Table is null)
         {
             return scenario.NotApplicable("Dependent or principal table missing at N-1; cannot seed orphan FK row.");
         }
 
-        return dependent.RenamedAwayReason is { } renamedAway ? scenario.NotSeeded(renamedAway) : scenario;
+        if (dependent.RenamedAwayReason is { } renamedAway)
+        {
+            return scenario.NotSeeded(renamedAway);
+        }
+
+        if (dependent.Added.Count > 0)
+        {
+            return OnNewColumns(scenario, dependent, nullBreaks: false);
+        }
+
+        // A foreign key dropped and added again, to change its delete behavior say, finds rows that already satisfy it.
+        return SameForeignKey(table, dependent.Columns, principal) is { } existing
+            ? scenario.NotApplicable(
+                $"Existing foreign key '{existing.Name}' over the same columns and principal key already keeps orphans out at N-1.")
+            : scenario;
     }
+
+    private static ForeignKeyMetadata? SameForeignKey(TableMetadata table, IReadOnlyList<string> columns, Target principal)
+        => table.ForeignKeys.FirstOrDefault(k =>
+            k.PrincipalTable.Equals(principal.Name)
+            && k.Columns.SequenceEqual(columns, StringComparer.OrdinalIgnoreCase)
+            && (principal.Columns.Count == 0 || k.PrincipalColumns.SequenceEqual(principal.Columns, StringComparer.OrdinalIgnoreCase)));
 
     private static IEnumerable<MigrationScenario> AlterColumnScenarios(
         AlterColumnOperation alter,
@@ -168,8 +209,11 @@ internal static class ScenarioPlanner
     {
         var target = Target.Of(renames, alter.Schema, alter.Table, [alter.Name]);
         var table = target.Table;
-        var live = target.RenamedAwayReason is null ? table?.FindColumn(target.Columns[0]) : null;
-        var oldCol = alter.OldColumn;
+
+        // A column added earlier in this migration is as its AddColumn created it.
+        var added = target.New[0];
+        var live = target.RenamedAwayReason is null && added is null ? table?.FindColumn(target.Columns[0]) : null;
+        ColumnOperation oldCol = added?.Operation ?? alter.OldColumn;
         string note = Note(target);
         var baseScenario = new MigrationScenario
         {
@@ -188,10 +232,10 @@ internal static class ScenarioPlanner
         bool wasNullable = live?.IsNullable ?? oldCol.IsNullable;
         if (wasNullable && !alter.IsNullable)
         {
-            yield return baseScenario with
+            yield return OnNewColumns(baseScenario with
             {
                 Name = $"NULL in '{alter.Name}' before column becomes NOT NULL{note}"
-            };
+            }, target, nullBreaks: true);
         }
 
         var oldType = live?.Type
@@ -203,13 +247,13 @@ internal static class ScenarioPlanner
         bool oldIsSized = oldType is null || oldType.Value.IsString || oldType.Value.IsBinary;
         if (oldIsSized && newMax is int nm && nm > 0 && (oldMax is null or SqlType.Max || oldMax > nm))
         {
-            yield return baseScenario with
+            yield return OnNewColumns(baseScenario with
             {
                 Kind = ScenarioKind.MaxLengthExceededAfterShrink,
                 Name = $"String longer than new max length for '{alter.Name}'{note}",
                 OldMaxLength = oldMax == SqlType.Max ? null : oldMax,
                 NewMaxLength = nm
-            };
+            }, target, nullBreaks: false);
         }
 
         if (oldType is not { } from || newType is not { } to
@@ -220,7 +264,7 @@ internal static class ScenarioPlanner
 
         if (from.IsExactDecimal && to.IsExactDecimal)
         {
-            yield return baseScenario with
+            yield return OnNewColumns(baseScenario with
             {
                 Kind = ScenarioKind.DecimalPrecisionOverflow,
                 Name = $"Value overflow when precision shrinks for '{alter.Name}'{note}",
@@ -229,20 +273,20 @@ internal static class ScenarioPlanner
                 OldScale = from.Scale,
                 NewScale = to.Scale,
                 SeedValue = failingValue
-            };
+            }, target, nullBreaks: false);
         }
         else
         {
             string oldText = live is null ? oldCol.ColumnType ?? from.ToString() : from.ToString();
             string newText = alter.ColumnType ?? to.ToString();
-            yield return baseScenario with
+            yield return OnNewColumns(baseScenario with
             {
                 Kind = ScenarioKind.ColumnTypeConversionIncompatible,
                 Name = $"Existing data in '{alter.Name}' may not convert from {oldText} to {newText}{note}",
                 OldColumnType = oldText,
                 NewColumnType = newText,
                 SeedValue = failingValue
-            };
+            }, target, nullBreaks: false);
         }
     }
 
@@ -276,6 +320,11 @@ internal static class ScenarioPlanner
         if (target.RenamedAwayReason is { } renamedAway)
         {
             return scenario.NotSeeded(renamedAway);
+        }
+
+        if (target.Added.Count > 0)
+        {
+            return OnNewColumns(scenario with { Columns = target.Columns }, target, nullBreaks: false);
         }
 
         if (table.FindColumn(target.Columns[0]) is not { } column)
@@ -324,26 +373,97 @@ internal static class ScenarioPlanner
         };
     }
 
-    /// <summary>" ('New' was 'Old' before this migration)" for the renames the targets followed; empty without any.</summary>
+    /// <summary>
+    /// Settles a planted scenario on columns added earlier in this migration. Nothing can be planted in a column
+    /// that does not exist yet, so the rows that exist when it is added, and what they get in it, are the data.
+    /// <paramref name="nullBreaks"/> says whether NULL is data the operation may fail on, as for a column
+    /// becoming NOT NULL.
+    /// </summary>
+    private static MigrationScenario OnNewColumns(MigrationScenario scenario, Target target, bool nullBreaks)
+        => target.Added.Count == 0 || scenario.Status != ScenarioStatus.Planted
+            ? scenario
+            : Unplantable(scenario, target.Added, nullBreaks) ?? scenario with { ExistingRowsSuffice = true };
+
+    /// <summary>
+    /// The scenario as not applicable or not seeded when what existing rows get in <paramref name="added"/> cannot
+    /// break the operation, or cannot be known; null when it is data the operation may fail on.
+    /// </summary>
+    private static MigrationScenario? Unplantable(MigrationScenario scenario, IEnumerable<NewColumn> added, bool nullBreaks)
+    {
+        foreach (var column in added)
+        {
+            var op = column.Operation;
+            if (op.ComputedColumnSql is not null || op.IsRowVersion || op["SqlServer:Identity"] is not null)
+            {
+                return scenario.NotSeeded(
+                    $"Column '{column.Name}' is added by this migration and filled by SQL Server, so no value can be planted in it.");
+            }
+
+            // SQL Server leaves NULL in existing rows of a nullable column even when it has a default.
+            if (op.IsNullable)
+            {
+                if (!nullBreaks)
+                {
+                    return scenario.NotApplicable(
+                        $"Column '{column.Name}' is added by this migration as nullable, so existing rows hold NULL in it, which this operation accepts.");
+                }
+            }
+            else if (op.DefaultValue is null && op.DefaultValueSql is null)
+            {
+                return scenario.NotApplicable(
+                    $"Column '{column.Name}' is added by this migration as NOT NULL without a default, which existing rows already fail.");
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// " ('New' was 'Old' before this migration)" for the renames the targets followed, and " ('New' added by this
+    /// migration)" for the columns earlier AddColumn operations created; empty without any.
+    /// </summary>
     private static string Note(params Target[] targets)
     {
         var renamed = targets.SelectMany(static t => t.Renamed).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        return renamed.Count == 0 ? "" : $" ({string.Join(", ", renamed)} before this migration)";
+        var added = targets.SelectMany(static t => t.Added).Select(static c => $"'{c.Name}'").Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var parts = new List<string>();
+        if (renamed.Count > 0)
+        {
+            parts.Add($"{string.Join(", ", renamed)} before this migration");
+        }
+
+        if (added.Count > 0)
+        {
+            parts.Add($"{string.Join(", ", added)} added by this migration");
+        }
+
+        return parts.Count == 0 ? "" : $" ({string.Join("; ", parts)})";
     }
+
+    /// <summary>A column an AddColumn earlier in this migration created, by the name the operation uses.</summary>
+    private sealed record NewColumn(string Name, AddColumnOperation Operation);
 
     /// <summary>A table and columns as one operation names them, mapped back to N-1 through the renames before it.</summary>
     /// <param name="Name">The table's N-1 name; the operation's own when the table does not exist at N-1.</param>
     /// <param name="Table">The table at N-1, if it exists.</param>
-    /// <param name="Columns">N-1 column names, in the operation's order; the operation's own for a column renamed away.</param>
+    /// <param name="Columns">
+    /// N-1 column names, in the operation's order; the operation's own for a column renamed away or added earlier in
+    /// this migration.
+    /// </param>
+    /// <param name="New">For each of <paramref name="Columns"/>, the column an earlier AddColumn created, or null.</param>
     /// <param name="RenamedAwayReason">Why nothing can be planted when an operation names a column that an earlier rename moved away.</param>
     /// <param name="Renamed">"'New' was 'Old'" for each name that differs from N-1.</param>
     private sealed record Target(
         TableName Name,
         TableMetadata? Table,
         IReadOnlyList<string> Columns,
+        IReadOnlyList<NewColumn?> New,
         string? RenamedAwayReason,
         IReadOnlyList<string> Renamed)
     {
+        /// <summary>The columns earlier AddColumn operations created.</summary>
+        public IReadOnlyList<NewColumn> Added => [.. New.OfType<NewColumn>()];
+
         public static Target Of(RenameMap renames, string? schemaName, string table, IEnumerable<string>? columns = null)
         {
             var now = renames.Schema.Resolve(schemaName, table);
@@ -357,9 +477,18 @@ internal static class ScenarioPlanner
             }
 
             var mapped = new List<string>();
+            var added = new List<NewColumn?>();
             string? renamedAway = null;
             foreach (string column in columns ?? [])
             {
+                if (before is { } addedTo && renames.AddedColumn(addedTo, column) is { } addColumn)
+                {
+                    mapped.Add(column);
+                    added.Add(new NewColumn(column, addColumn));
+                    continue;
+                }
+
+                added.Add(null);
                 string? atN1 = before is { } n1Table ? renames.ColumnAtN1(n1Table, column) : column;
                 if (atN1 is null)
                 {
@@ -380,6 +509,7 @@ internal static class ScenarioPlanner
                 before ?? now,
                 before is { } atN1Table ? renames.Schema.FindTable(atN1Table) : null,
                 mapped,
+                added,
                 renamedAway,
                 renamed);
         }

@@ -239,6 +239,53 @@ public sealed class SchemaCaseTests
         Assert.Contains("SQL Server error 50000", report.Steps[1].Summary, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Foreign_key_added_again_finds_rows_that_satisfy_it()
+    {
+        var step = await RunAsync<NewColumnContext>("20260101000002_CascadePlayerTeam", o => new(o));
+
+        Assert.True(step.Outcome == MigrationStepOutcome.Passed, step.Summary);
+        var fk = Assert.Single(step.Scenarios);
+        Assert.Equal(ScenarioStatus.NotApplicable, fk.Status);
+        Assert.Contains("FK_Players_Teams_TeamId", fk.Reason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Required_foreign_key_column_added_with_an_empty_default_breaks_on_existing_rows()
+    {
+        var step = await RunAsync<NewColumnContext>("20260101000003_AddRequiredPlayerCoach", o => new(o));
+
+        AssertBrokenBy(step, ScenarioKind.ForeignKeyOrphan);
+        Assert.DoesNotContain(step.SqlExecuted, sql => sql.Contains("[CoachId]", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Column_added_as_nullable_and_made_required_breaks_without_a_backfill()
+    {
+        var step = await RunAsync<NewColumnContext>("20260101000004_AddRequiredPlayerNumberWithoutBackfill", o => new(o));
+
+        AssertBrokenBy(step, ScenarioKind.NonNullableColumnWithNull);
+    }
+
+    [Fact]
+    public async Task Column_added_as_nullable_and_made_required_passes_with_a_backfill()
+    {
+        var step = await RunAsync<NewColumnContext>("20260101000005_AddRequiredPlayerNicknameWithBackfill", o => new(o));
+
+        Assert.True(step.Outcome == MigrationStepOutcome.Passed, step.Summary);
+        Assert.Equal(ScenarioStatus.Planted, Assert.Single(step.Scenarios).Status);
+    }
+
+    [Fact]
+    public async Task Nullable_column_added_with_a_default_holds_NULL_in_existing_rows()
+    {
+        var step = await RunAsync<NewColumnContext>("20260101000006_AddOptionalTeamCaptain", o => new(o));
+
+        Assert.True(step.Outcome == MigrationStepOutcome.Passed, step.Summary);
+        Assert.Equal(2, step.Scenarios.Count);
+        Assert.All(step.Scenarios, s => Assert.Equal(ScenarioStatus.NotApplicable, s.Status));
+    }
+
     private static MigrationTestOptions Options<TContext>(Func<DbContextOptions<TContext>, TContext> create)
         where TContext : DbContext
     {

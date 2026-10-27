@@ -418,6 +418,74 @@ public sealed class SeedSqlGeneratorTests
             StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData("int", 2, "2000002")]
+    [InlineData("bigint", 2, "2000002")]
+    [InlineData("smallint", 2, "32002")]
+    [InlineData("tinyint", 2, "202")]
+    [InlineData("tinyint", 60, null)]
+    [InlineData("decimal(10,0)", 3, "2000003")]
+    [InlineData("decimal(6,0)", 2, null)]
+    [InlineData("uniqueidentifier", 2, "'00000000-0000-0000-0001-000000000002'")]
+    [InlineData("nvarchar(10)", 2, "N'w2'")]
+    [InlineData("nchar(2)", 2, "N'w2'")]
+    [InlineData("nchar(1)", 2, null)]
+    [InlineData("date", 2, null)]
+    public void SeparateKeyValue_stays_clear_of_ordinary_seed_keys(string type, int ordinal, string? expected)
+    {
+        Assert.Equal(expected, SqlLiterals.SeparateKeyValue(SqlType.Parse(type)!.Value, ordinal));
+    }
+
+    [Fact]
+    public void TryGetSeparateKey_gives_a_guid_key_a_value_no_ordinary_row_has()
+    {
+        var desks = Desks("uniqueidentifier", identity: false);
+
+        Assert.True(SeedSqlGenerator.TryGetSeparateKey(desks, ["Id"], 2, out var values, out string? reseed, out _));
+
+        var key = Assert.Single(values);
+        Assert.Equal(new ColumnValue("Id", "'00000000-0000-0000-0001-000000000002'", Unique: true), key);
+        Assert.Null(reseed);
+
+        // The key needs no other new value; the unique foreign key to Employees takes a new employee's key.
+        Assert.Equal(
+            "INSERT INTO [dbo].[Desks] ([Id], [EmployeeId]) SELECT TOP (1) '00000000-0000-0000-0001-000000000002', "
+            + "(SELECT [p].[Id] FROM [dbo].[Employees] AS [p] WHERE NOT EXISTS (SELECT 1 FROM [dbo].[Desks] AS [d] WHERE [d].[EmployeeId] = [p].[Id]) "
+            + "ORDER BY [p].[Id] OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY) FROM [dbo].[Desks];",
+            SeedSqlGenerator.CopyRow(desks, [], values, ordinal: 3).Sql);
+        Assert.Equal([new TableName("dbo", "Employees")], SeedSqlGenerator.PrincipalsForCopies(desks, [], values));
+    }
+
+    [Fact]
+    public void TryGetSeparateKey_reseeds_an_identity_key_past_ordinary_seed_rows()
+    {
+        var desks = Desks("int", identity: true);
+
+        Assert.True(SeedSqlGenerator.TryGetSeparateKey(desks, ["Id"], 2, out var values, out string? reseed, out _));
+
+        Assert.Empty(values);
+        Assert.Equal(
+            "IF IDENT_CURRENT(N'[dbo].[Desks]') < 2000000 DBCC CHECKIDENT (N'[dbo].[Desks]', RESEED, 2000000) WITH NO_INFOMSGS;",
+            reseed);
+    }
+
+    [Theory]
+    [InlineData("EmployeeId", "int", "'EmployeeId' is a foreign key column")]
+    [InlineData("Code", "nchar(1)", "no such value can be generated for column 'Code' of type nchar(1)")]
+    [InlineData("Missing", "int", "'Missing' does not exist at N-1")]
+    public void TryGetSeparateKey_fails_for_a_column_that_cannot_get_a_separate_value(string column, string type, string reason)
+    {
+        var desks = new TableMetadata
+        {
+            Name = new TableName("dbo", "Desks"),
+            Columns = [Col("Id", "int"), Col("EmployeeId", "int"), Col("Code", type)],
+            ForeignKeys = [ForeignKey("EmployeeId", "Employees")]
+        };
+
+        Assert.False(SeedSqlGenerator.TryGetSeparateKey(desks, [column], 2, out _, out _, out string? failure));
+        Assert.Contains(reason, failure);
+    }
+
     [Fact]
     public void TryGetBadValues_conversion_uses_the_planned_value()
     {
@@ -459,6 +527,14 @@ public sealed class SeedSqlGeneratorTests
 
     private static MigrationScenario Scenario(ScenarioKind kind, string column) =>
         new() { Kind = kind, Name = "test", Table = "T", Columns = [column] };
+
+    private static TableMetadata Desks(string keyType, bool identity) => new()
+    {
+        Name = new TableName("dbo", "Desks"),
+        Columns = [Col("Id", keyType, identity: identity), Col("EmployeeId", keyType)],
+        UniqueKeys = [PrimaryKey("Id"), Unique("IX_Desks_EmployeeId", "EmployeeId")],
+        ForeignKeys = [ForeignKey("EmployeeId", "Employees")]
+    };
 
     private static TableMetadata PostTags() => new()
     {

@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations.Builders;
 
 namespace MigrationTester.Tests.SchemaCases;
 
@@ -937,4 +939,101 @@ public sealed class LimitCoursesToOneTutor : Migration
         migrationBuilder.DropIndex(name: "IX_TutorCourses_CourseId", table: "TutorCourses");
         migrationBuilder.CreateIndex(name: "IX_TutorCourses_CourseId", table: "TutorCourses", column: "CourseId", unique: true);
     }
+}
+
+// Badges move from desks to employees, and each desk belongs to one employee. A new desk needs a new employee, and
+// the seeding gives both rows the same key unless the desk's key comes from a separate range.
+public sealed class DeskGuidContext(DbContextOptions<DeskGuidContext> options) : DbContext(options);
+
+public sealed class DeskIdentityContext(DbContextOptions<DeskIdentityContext> options) : DbContext(options);
+
+[DbContext(typeof(DeskGuidContext))]
+[Migration("20260101000001_CreateDesks")]
+public sealed class CreateDesksWithGuidKeys : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) => DeskMigrations.CreateDesks(migrationBuilder, guidKeys: true);
+}
+
+[DbContext(typeof(DeskGuidContext))]
+[Migration("20260101000002_MoveBadgesToEmployees")]
+public sealed class MoveGuidKeyedBadgesToEmployees : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) => DeskMigrations.MoveBadgesToEmployees(migrationBuilder);
+}
+
+[DbContext(typeof(DeskIdentityContext))]
+[Migration("20260101000001_CreateDesks")]
+public sealed class CreateDesksWithIdentityKeys : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) => DeskMigrations.CreateDesks(migrationBuilder, guidKeys: false);
+}
+
+[DbContext(typeof(DeskIdentityContext))]
+[Migration("20260101000002_MoveBadgesToEmployees")]
+public sealed class MoveIdentityKeyedBadgesToEmployees : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) => DeskMigrations.MoveBadgesToEmployees(migrationBuilder);
+}
+
+internal static class DeskMigrations
+{
+    public static void CreateDesks(MigrationBuilder migrationBuilder, bool guidKeys)
+    {
+        migrationBuilder.CreateTable(
+            name: "Employees",
+            columns: table => new
+            {
+                Id = Key(table, guidKeys),
+                Name = table.Column<string>("nvarchar(50)", maxLength: 50, nullable: false)
+            },
+            constraints: table => table.PrimaryKey("PK_Employees", x => x.Id));
+        migrationBuilder.CreateTable(
+            name: "Desks",
+            columns: table => new
+            {
+                Id = Key(table, guidKeys),
+                EmployeeId = Reference(table, guidKeys)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_Desks", x => x.Id);
+                table.ForeignKey("FK_Desks_Employees_EmployeeId", x => x.EmployeeId, "Employees", "Id", onDelete: ReferentialAction.Cascade);
+            });
+        migrationBuilder.CreateIndex(name: "IX_Desks_EmployeeId", table: "Desks", column: "EmployeeId", unique: true);
+        migrationBuilder.CreateTable(
+            name: "Badges",
+            columns: table => new
+            {
+                Id = Key(table, guidKeys),
+                DeskId = Reference(table, guidKeys)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_Badges", x => x.Id);
+                table.ForeignKey("FK_Badges_Desks_DeskId", x => x.DeskId, "Desks", "Id", onDelete: ReferentialAction.Cascade);
+            });
+        migrationBuilder.CreateIndex(name: "IX_Badges_DeskId", table: "Badges", column: "DeskId");
+    }
+
+    public static void MoveBadgesToEmployees(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.DropForeignKey(name: "FK_Badges_Desks_DeskId", table: "Badges");
+        migrationBuilder.RenameColumn(name: "DeskId", table: "Badges", newName: "EmployeeId");
+        migrationBuilder.RenameIndex(name: "IX_Badges_DeskId", table: "Badges", newName: "IX_Badges_EmployeeId");
+        migrationBuilder.AddForeignKey(
+            name: "FK_Badges_Employees_EmployeeId",
+            table: "Badges",
+            column: "EmployeeId",
+            principalTable: "Employees",
+            principalColumn: "Id",
+            onDelete: ReferentialAction.NoAction);
+    }
+
+    private static OperationBuilder<AddColumnOperation> Key(ColumnsBuilder table, bool guid) => guid
+        ? table.Column<Guid>("uniqueidentifier", nullable: false)
+        : table.Column<int>("int", nullable: false).Annotation("SqlServer:Identity", "1, 1");
+
+    private static OperationBuilder<AddColumnOperation> Reference(ColumnsBuilder table, bool guid) => guid
+        ? table.Column<Guid>("uniqueidentifier", nullable: false)
+        : table.Column<int>("int", nullable: false);
 }

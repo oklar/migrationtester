@@ -60,6 +60,43 @@ internal static class SqlLiterals
         _ => null
     };
 
+    /// <summary>
+    /// Where keys start that must differ from every key seeded in another table: ordinary seed rows, from
+    /// <see cref="KeyOffset"/> up, stay far below it. Null for types without one.
+    /// </summary>
+    public static long? SeparateKeyOffset(SqlType type) => type.Name switch
+    {
+        "tinyint" => 200,
+        "smallint" => 32_000,
+        "int" or "bigint" => 2_000_000,
+        "decimal" or "numeric" when (type.Precision ?? 18) - (type.Scale ?? 0) >= 8 => 2_000_000,
+        _ => null
+    };
+
+    /// <summary>
+    /// A key value no ordinary seed row of any table holds, for a row whose key must differ from another table's
+    /// seeded keys: from <see cref="SeparateKeyOffset"/> up, a GUID with a fourth group of 0001, or a string that
+    /// starts with w. Null when the type cannot hold one.
+    /// </summary>
+    public static string? SeparateKeyValue(SqlType type, int ordinal)
+    {
+        string n = ordinal.ToString(Invariant);
+        if (SeparateKeyOffset(type) is long offset)
+        {
+            long value = offset + ordinal;
+            return value <= type.Name switch { "tinyint" => byte.MaxValue, "smallint" => short.MaxValue, _ => int.MaxValue }
+                ? value.ToString(Invariant)
+                : null;
+        }
+
+        return type.Name switch
+        {
+            "uniqueidentifier" => $"'00000000-0000-0000-0001-{ordinal:D12}'",
+            _ when type.IsString && (type.Length is not int max || max == SqlType.Max || max > n.Length) => NString($"w{n}"),
+            _ => null
+        };
+    }
+
     /// <summary>A value no principal row holds: the type's maximum, or an out-of-pattern string.</summary>
     public static string? OrphanValue(SqlType type) => type.Name switch
     {

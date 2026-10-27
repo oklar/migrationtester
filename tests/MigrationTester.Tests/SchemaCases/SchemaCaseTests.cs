@@ -303,6 +303,24 @@ public sealed class SchemaCaseTests
     }
 
     [Fact]
+    public async Task Foreign_key_moved_to_a_one_to_one_principal_with_guid_keys_gets_a_key_it_lacks()
+    {
+        var step = await RunAsync<DeskGuidContext>("20260101000002_MoveBadgesToEmployees", o => new(o));
+
+        AssertMovedForeignKeyBroken(step);
+        Assert.Contains(step.SqlExecuted, sql => sql.StartsWith("INSERT INTO [dbo].[Desks] ([Id], [EmployeeId]) SELECT TOP (1) '00000000-0000-0000-0001-", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Foreign_key_moved_to_a_one_to_one_principal_with_identity_keys_gets_a_key_it_lacks()
+    {
+        var step = await RunAsync<DeskIdentityContext>("20260101000002_MoveBadgesToEmployees", o => new(o));
+
+        AssertMovedForeignKeyBroken(step);
+        Assert.Contains(step.SqlExecuted, sql => sql.Contains("DBCC CHECKIDENT (N'[dbo].[Desks]', RESEED, 2000000)", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Foreign_key_moved_from_a_derived_type_to_its_base_type_is_not_applicable()
     {
         var step = await RunAsync<RepointContext>("20260101000003_AssignTripsToVehicles", o => new(o));
@@ -352,6 +370,18 @@ public sealed class SchemaCaseTests
         Func<DbContextOptions<TContext>, TContext> create)
         where TContext : DbContext
         => MigrationTestRunner.RunAsync(Options(create), migrationId, Ct);
+
+    private static void AssertMovedForeignKeyBroken(MigrationStepResult step)
+    {
+        AssertBrokenBy(step, ScenarioKind.ForeignKeyOrphan);
+        var fk = Assert.Single(step.Scenarios);
+        Assert.Equal(["DeskId"], fk.Columns);
+        Assert.Equal("Employees", fk.PrincipalTable);
+        Assert.Contains("FK_Badges_Employees_EmployeeId", step.Summary, StringComparison.Ordinal);
+
+        // The new desk needs an employee of its own; the new desk's key must not be that employee's.
+        Assert.Contains(step.SqlExecuted, sql => sql.StartsWith("INSERT INTO [dbo].[Employees]", StringComparison.Ordinal));
+    }
 
     private static void AssertBrokenBy(MigrationStepResult step, ScenarioKind expectedKind)
     {

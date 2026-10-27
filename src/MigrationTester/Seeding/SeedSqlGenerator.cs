@@ -20,7 +20,8 @@ internal readonly record struct SeedSql(string? Sql, string? Failure)
 /// <param name="Column">The column, by its N-1 name.</param>
 /// <param name="Value">A SQL expression.</param>
 /// <param name="Lookup">The value is a subquery that may find no row; the statement then plants nothing rather than NULL.</param>
-internal readonly record struct ColumnValue(string Column, string Value, bool Lookup = false);
+/// <param name="Unique">No other row holds the value, so a copy needs no other new value for a unique key over the column.</param>
+internal readonly record struct ColumnValue(string Column, string Value, bool Lookup = false, bool Unique = false);
 
 /// <summary>
 /// Seed SQL that stays valid under the N-1 schema: one ordinary row per table whose required foreign
@@ -102,6 +103,56 @@ internal static class SeedSqlGenerator
             return null;
         }
 
+        return Reseed(table, offset);
+    }
+
+    /// <summary>
+    /// How to add a row to <paramref name="table"/> whose <paramref name="keyColumns"/> hold values no ordinary seed
+    /// row of any table holds (see <see cref="SqlLiterals.SeparateKeyValue"/>): values to copy a row with, and for an
+    /// identity column a reseed to run first. False when a column cannot get such a value.
+    /// </summary>
+    public static bool TryGetSeparateKey(
+        TableMetadata table,
+        IReadOnlyList<string> keyColumns,
+        int ordinal,
+        out IReadOnlyList<ColumnValue> values,
+        out string? reseed,
+        [NotNullWhen(false)] out string? failure)
+    {
+        var result = new List<ColumnValue>();
+        values = result;
+        reseed = null;
+        failure = null;
+        foreach (string name in keyColumns)
+        {
+            var column = table.FindColumn(name);
+            bool inForeignKey = table.ForeignKeys.Any(f => f.Columns.Contains(name, StringComparer.OrdinalIgnoreCase));
+            if (column is { IsIdentity: true } && SqlLiterals.SeparateKeyOffset(column.Type) is long offset)
+            {
+                reseed = Reseed(table, offset);
+            }
+            else if (column is { IsInsertable: true } && !inForeignKey && SqlLiterals.SeparateKeyValue(column.Type, ordinal) is { } value)
+            {
+                result.Add(new ColumnValue(column.Name, value, Unique: true));
+            }
+            else
+            {
+                failure = column switch
+                {
+                    null => $"column '{name}' does not exist at N-1",
+                    { IsIdentity: false, IsInsertable: false } => $"column '{column.Name}' is filled by SQL Server",
+                    _ when inForeignKey => $"column '{column.Name}' is a foreign key column",
+                    _ => $"no such value can be generated for column '{column.Name}' of type {column.Type}"
+                };
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static string Reseed(TableMetadata table, long offset)
+    {
         string name = SqlLiterals.NString(SqlDialect.Q(table.Name));
         return $"IF IDENT_CURRENT({name}) < {offset} DBCC CHECKIDENT ({name}, RESEED, {offset}) WITH NO_INFOMSGS;";
     }
@@ -201,8 +252,9 @@ internal static class SeedSqlGenerator
     private sealed record FreshColumn(ColumnMetadata Column, ForeignKeyMetadata? ForeignKey);
 
     /// <summary>
-    /// For each existing unique key without an identity column, the column copies get a fresh value in: one that is
-    /// neither kept, overridden nor in a foreign key, or else the only column of a foreign key to another table.
+    /// For each existing unique key without an identity column or a unique override, the column copies get a fresh
+    /// value in: one that is neither kept, overridden nor in a foreign key, or else the only column of a foreign key
+    /// to another table.
     /// </summary>
     private static bool TryChooseFreshColumns(
         TableMetadata table,
@@ -212,6 +264,7 @@ internal static class SeedSqlGenerator
         [NotNullWhen(false)] out string? failure)
     {
         var fixedColumns = new HashSet<string>(keep.Concat(overrides.Select(static o => o.Column)), StringComparer.OrdinalIgnoreCase);
+        var uniqueColumns = new HashSet<string>(overrides.Where(static o => o.Unique).Select(static o => o.Column), StringComparer.OrdinalIgnoreCase);
         var fkColumns = new HashSet<string>(table.ForeignKeys.SelectMany(static f => f.Columns), StringComparer.OrdinalIgnoreCase);
         var result = new List<FreshColumn>();
         chosen = result;
@@ -219,7 +272,10 @@ internal static class SeedSqlGenerator
         foreach (var key in table.UniqueKeys)
         {
             var keyColumns = key.Columns.Select(table.FindColumn).OfType<ColumnMetadata>().ToList();
-            if (keyColumns.Any(c => c.IsIdentity || result.Exists(f => string.Equals(f.Column.Name, c.Name, StringComparison.OrdinalIgnoreCase))))
+            if (keyColumns.Any(c =>
+                c.IsIdentity
+                || uniqueColumns.Contains(c.Name)
+                || result.Exists(f => string.Equals(f.Column.Name, c.Name, StringComparison.OrdinalIgnoreCase))))
             {
                 continue;
             }
@@ -437,7 +493,8 @@ internal static class SeedSqlGenerator
 
     /// <summary>
     /// The key of the first <paramref name="existing"/> principal row that the scenario's new principal lacks, as
-    /// lookups. The caller adds a principal row first: the first rows of both tables often have the same key.
+    /// lookups. Keys seeded in different tables often match, so the caller first adds a principal row with a separate
+    /// key (see <see cref="TryGetSeparateKey"/>).
     /// </summary>
     private static bool TryGetKeyOutsidePrincipal(
         MigrationScenario scenario,

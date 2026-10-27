@@ -34,6 +34,8 @@ public sealed class ModeEquivalenceTests
         ["NewColumn"] = retry => new NewColumnContext(Build<NewColumnContext>(retry)),
         ["Repoint"] = retry => new RepointContext(Build<RepointContext>(retry)),
         ["JoinTable"] = retry => new JoinTableContext(Build<JoinTableContext>(retry)),
+        ["DeskGuid"] = retry => new DeskGuidContext(Build<DeskGuidContext>(retry)),
+        ["DeskIdentity"] = retry => new DeskIdentityContext(Build<DeskIdentityContext>(retry)),
         ["BrokenFirst"] = retry => new BrokenFirstContext(Build<BrokenFirstContext>(retry))
     };
 

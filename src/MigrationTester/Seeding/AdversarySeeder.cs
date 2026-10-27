@@ -116,14 +116,16 @@ internal static class AdversarySeeder
 
             if (SeedSqlGenerator.ExistingForeignKey(scenario, table) is { } existing)
             {
-                // The orphan is a key of the existing foreign key's principal that the new principal lacks, and the
-                // first rows of both tables often have the same key: add a principal row with a key of its own.
+                // The orphan is a key of the existing foreign key's principal that the new principal lacks. Keys seeded
+                // in different tables often match, also in the rows added for copies, so add a principal row whose key
+                // no other seeded row has.
                 string? principalFailure = schema.FindTable(existing.PrincipalTable) is { } oldPrincipal
-                    ? await CopyAsync(oldPrincipal, [], [], copies: 1).ConfigureAwait(false)
+                    ? await AddRowWithSeparateKeyAsync(oldPrincipal, existing.PrincipalColumns).ConfigureAwait(false)
                     : "the table does not exist at N-1";
                 if (principalFailure is not null)
                 {
-                    return $"no row could be added to {existing.PrincipalTable}, which '{existing.Name}' references: {principalFailure}";
+                    return $"no row with a key no other seeded row has could be added to {existing.PrincipalTable}, which "
+                        + $"'{existing.Name}' references: {principalFailure}";
                 }
             }
 
@@ -165,6 +167,22 @@ internal static class AdversarySeeder
             var statement = SeedSqlGenerator.CopyRows(
                 table, keep, overrides, [.. Enumerable.Range(0, copies).Select(_ => NextOrdinal(table.Name))]);
             return statement.Succeeded ? await ExecuteAsync(statement.Sql).ConfigureAwait(false) : statement.Failure;
+        }
+
+        async Task<string?> AddRowWithSeparateKeyAsync(TableMetadata table, IReadOnlyList<string> keyColumns)
+        {
+            if (!SeedSqlGenerator.TryGetSeparateKey(table, keyColumns, NextOrdinal(table.Name), out var key, out string? reseed, out string? failure))
+            {
+                return failure;
+            }
+
+            if (reseed is not null
+                && await TryExecuteAsync(connection, transaction, reseed, sqlLog, cancellationToken, expectRows: false).ConfigureAwait(false) is { } reseedFailure)
+            {
+                return reseedFailure;
+            }
+
+            return await CopyAsync(table, [], key, copies: 1).ConfigureAwait(false);
         }
 
         Task<string?> ExecuteAsync(string sql) => TryExecuteAsync(connection, transaction, sql, sqlLog, cancellationToken);

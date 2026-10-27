@@ -4,6 +4,8 @@ All notable changes to MigrationTester. Versions follow [Semantic Versioning](ht
 
 ## [Unreleased]
 
+## [0.1.0-preview.4] - 2026-10-27
+
 ### Changed
 
 - A foreign key moved to another table while the old foreign key over the same columns still holds at N-1, as EF scaffolds when a navigation moves to another entity and its foreign key property is renamed, now gets planted data instead of being `NotSeeded` because the planted orphan conflicted with the old foreign key. One row holds a key of the old principal that the new principal lacks, taken from an old-principal row added for it. That row's key comes from a range no other seeded row uses, so it also differs from keys seeded in the new principal, which in two tables with GUID or identity keys follow the same sequence. When the old principal's key is itself a foreign key to the new principal key, as for a relationship moved from a derived type to its base type (table-per-type), the case is `NotApplicable`: every key the rows can hold is in the new principal.
@@ -69,7 +71,8 @@ First preview release.
 - Each migration runs on its planted data in a transaction that is rolled back, so a run costs about two migration runs per migration; `RebuildDatabaseForEachMigration` recreates the database for every migration instead.
 - `RequireAllScenariosSeeded` to fail migrations whose scenarios could not all be planted.
 
-[Unreleased]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.3...HEAD
+[Unreleased]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.4...HEAD
+[0.1.0-preview.4]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.3...v0.1.0-preview.4
 [0.1.0-preview.3]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.2...v0.1.0-preview.3
 [0.1.0-preview.2]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.1...v0.1.0-preview.2
 [0.1.0-preview.1]: https://github.com/oklar/migrationtester/releases/tag/v0.1.0-preview.1

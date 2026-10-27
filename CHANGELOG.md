@@ -6,6 +6,10 @@ All notable changes to MigrationTester. Versions follow [Semantic Versioning](ht
 
 First stable release: the same code and API as 0.1.0-preview.5, now recorded in `PublicAPI.Shipped.txt`.
 
+### Changed
+
+- The package names Larsenq as author and copyright holder (`Copyright (c) 2026 Larsenq`), and the repository has the MIT `LICENSE` text that the package's license expression already declared.
+
 ## [0.1.0-preview.5] - 2026-10-27
 
 The API as planned for 0.1.0.

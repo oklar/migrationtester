@@ -5,38 +5,43 @@ namespace MigrationTester;
 /// <summary>What happened when one migration ran on data planted at the migration before it.</summary>
 public sealed class MigrationStepResult
 {
+    /// <summary>Created by the runner; callers only read results.</summary>
+    internal MigrationStepResult()
+    {
+    }
+
     /// <summary>EF migration id (e.g. 20240101120000_MyMigration).</summary>
-    public required string MigrationId { get; init; }
+    public string MigrationId { get; internal init; } = "";
 
     /// <summary>Whether the migration passed, failed on the planted data, or could not be tested.</summary>
-    public required MigrationStepOutcome Outcome { get; init; }
+    public MigrationStepOutcome Outcome { get; internal init; }
 
     /// <summary>The migration's error (<see cref="MigrationStepOutcome.Failed"/>) or the setup error (<see cref="MigrationStepOutcome.Error"/>).</summary>
-    public Exception? Exception { get; init; }
+    public Exception? Exception { get; internal init; }
 
     /// <summary>Every scenario derived from the migration's <c>Up()</c>, with its <see cref="MigrationScenario.Status"/>.</summary>
-    public IReadOnlyList<MigrationScenario> Scenarios { get; init; } = [];
+    public IReadOnlyList<MigrationScenario> Scenarios { get; internal init; } = [];
 
     /// <summary>
     /// Planted scenarios the failure matches, judged by SQL Server's error numbers and the names in its messages.
     /// Empty when the step passed or when the error matches none of them.
     /// </summary>
-    public IReadOnlyList<MigrationScenario> FailingScenarios { get; init; } = [];
+    public IReadOnlyList<MigrationScenario> FailingScenarios { get; internal init; } = [];
 
     /// <summary>Things that limit what the step tested, e.g. <c>migrationBuilder.Sql(...)</c> or a table that got no seed row.</summary>
-    public IReadOnlyList<string> Warnings { get; init; } = [];
+    public IReadOnlyList<string> Warnings { get; internal init; } = [];
 
     /// <summary>Seed statements that ran before the migration, in order.</summary>
-    public IReadOnlyList<string> SqlExecuted { get; init; } = [];
+    public IReadOnlyList<string> SqlExecuted { get; internal init; } = [];
 
     /// <summary>True when <c>Up()</c> calls <c>migrationBuilder.Sql(...)</c>, whose effects are not analyzed.</summary>
-    public bool ContainsRawSql { get; init; }
+    public bool ContainsRawSql { get; internal init; }
 
     /// <summary>The database the step ran in.</summary>
-    public required string DatabaseName { get; init; }
+    public string DatabaseName { get; internal init; } = "";
 
-    /// <summary>Wall-clock time for this step (fresh database, seed, migrate).</summary>
-    public TimeSpan Duration { get; init; }
+    /// <summary>Wall-clock time for this step: seeding, running the migration on the planted data, and applying it for the next step.</summary>
+    public TimeSpan Duration { get; internal init; }
 
     internal bool RequireAllScenariosSeeded { get; init; }
 

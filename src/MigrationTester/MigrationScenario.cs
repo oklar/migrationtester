@@ -9,62 +9,67 @@ namespace MigrationTester;
 /// </summary>
 public sealed record MigrationScenario
 {
+    /// <summary>Created by the planner; callers only read scenarios.</summary>
+    internal MigrationScenario()
+    {
+    }
+
     /// <summary>What kind of data the migration may fail on.</summary>
-    public required ScenarioKind Kind { get; init; }
+    public ScenarioKind Kind { get; internal init; }
 
     /// <summary>User-facing label for assertions and reports.</summary>
-    public required string Name { get; init; }
+    public string Name { get; internal init; } = "";
 
-    /// <summary>Schema of <see cref="Table"/>; null when not resolved against a live database.</summary>
-    public string? Schema { get; init; }
+    /// <summary>Schema of <see cref="Table"/>: the connection's default schema when the operation names none.</summary>
+    public string? Schema { get; internal init; }
 
     /// <summary>Table the data is planted in (unquoted name).</summary>
-    public required string Table { get; init; }
+    public string Table { get; internal init; } = "";
 
     /// <summary>Columns involved (e.g. unique key columns, FK columns).</summary>
-    public IReadOnlyList<string> Columns { get; init; } = [];
+    public IReadOnlyList<string> Columns { get; internal init; } = [];
 
     /// <summary>Schema of <see cref="PrincipalTable"/> for FK scenarios.</summary>
-    public string? PrincipalSchema { get; init; }
+    public string? PrincipalSchema { get; internal init; }
 
     /// <summary>Principal table for FK scenarios.</summary>
-    public string? PrincipalTable { get; init; }
+    public string? PrincipalTable { get; internal init; }
 
     /// <summary>Referenced principal columns for FK scenarios, in the order of <see cref="Columns"/>.</summary>
-    public IReadOnlyList<string>? PrincipalColumns { get; init; }
+    public IReadOnlyList<string>? PrincipalColumns { get; internal init; }
 
     /// <summary>For length reduction: old max length (null = max/unlimited for strings).</summary>
-    public int? OldMaxLength { get; init; }
+    public int? OldMaxLength { get; internal init; }
 
     /// <summary>For length reduction: new max length after migration.</summary>
-    public int? NewMaxLength { get; init; }
+    public int? NewMaxLength { get; internal init; }
 
     /// <summary>For type conversion: SQL type before the ALTER.</summary>
-    public string? OldColumnType { get; init; }
+    public string? OldColumnType { get; internal init; }
 
     /// <summary>For type conversion: SQL type after the ALTER.</summary>
-    public string? NewColumnType { get; init; }
+    public string? NewColumnType { get; internal init; }
 
     /// <summary>For precision reduction: old precision.</summary>
-    public int? OldPrecision { get; init; }
+    public int? OldPrecision { get; internal init; }
 
     /// <summary>For precision reduction: new precision.</summary>
-    public int? NewPrecision { get; init; }
+    public int? NewPrecision { get; internal init; }
 
     /// <summary>For precision reduction: old scale.</summary>
-    public int? OldScale { get; init; }
+    public int? OldScale { get; internal init; }
 
     /// <summary>For precision reduction: new scale.</summary>
-    public int? NewScale { get; init; }
+    public int? NewScale { get; internal init; }
 
     /// <summary>The migration operation the scenario comes from.</summary>
-    public MigrationOperation? SourceOperation { get; init; }
+    public MigrationOperation? SourceOperation { get; internal init; }
 
     /// <summary>Whether the data was planted before the migration ran.</summary>
-    public ScenarioStatus Status { get; init; } = ScenarioStatus.Planted;
+    public ScenarioStatus Status { get; internal init; } = ScenarioStatus.Planted;
 
     /// <summary>Why the data was not planted; null when <see cref="Status"/> is <see cref="ScenarioStatus.Planted"/>.</summary>
-    public string? Reason { get; init; }
+    public string? Reason { get; internal init; }
 
     /// <summary>T-SQL showing how a migration can fix data like this before the statement that fails on it.</summary>
     public string RepairHint => RepairHintCatalog.ForScenario(this);

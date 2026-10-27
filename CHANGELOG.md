@@ -4,6 +4,15 @@ All notable changes to MigrationTester. Versions follow [Semantic Versioning](ht
 
 ## [Unreleased]
 
+## [0.1.0-preview.5] - 2026-10-27
+
+The API as planned for 0.1.0.
+
+### Changed
+
+- `MigrationScenario`, `MigrationStepResult` and `MigrationTestReport` can no longer be created or changed outside the library: their constructors and property setters are internal, and their properties stay readable. They are results, and this keeps them free to change after 0.1.0 without breaking callers; it also rules out a hand-made `MigrationStepResult` whose `Succeeded` disagrees with `RequireAllScenariosSeeded`.
+- Doc fixes: `RunAsync` says it ignores `MigrationIds` and `AfterMigrationId`, `MigrationStepResult.Duration` describes what the default mode does, and `MigrationScenario.Schema` says it holds the default schema when the operation names none.
+
 ## [0.1.0-preview.4] - 2026-10-27
 
 ### Changed
@@ -71,7 +80,8 @@ First preview release.
 - Each migration runs on its planted data in a transaction that is rolled back, so a run costs about two migration runs per migration; `RebuildDatabaseForEachMigration` recreates the database for every migration instead.
 - `RequireAllScenariosSeeded` to fail migrations whose scenarios could not all be planted.
 
-[Unreleased]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.4...HEAD
+[Unreleased]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.5...HEAD
+[0.1.0-preview.5]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.4...v0.1.0-preview.5
 [0.1.0-preview.4]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.3...v0.1.0-preview.4
 [0.1.0-preview.3]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.2...v0.1.0-preview.3
 [0.1.0-preview.2]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.1...v0.1.0-preview.2

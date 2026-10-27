@@ -66,7 +66,10 @@ public static class MigrationTestRunner
             .ConfigureAwait(false);
     }
 
-    /// <summary>Tests one migration (full id or name).</summary>
+    /// <summary>
+    /// Tests one migration (full id or name). <see cref="MigrationTestOptions.MigrationIds"/> and
+    /// <see cref="MigrationTestOptions.AfterMigrationId"/> do not apply.
+    /// </summary>
     public static async Task<MigrationStepResult> RunAsync(
         MigrationTestOptions options,
         string migrationId,

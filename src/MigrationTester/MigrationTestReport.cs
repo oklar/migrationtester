@@ -5,17 +5,22 @@ namespace MigrationTester;
 /// <summary>Results of <see cref="MigrationTestRunner.RunAllAsync"/> or <see cref="MigrationTestRunner.RunRangeAsync"/>.</summary>
 public sealed class MigrationTestReport
 {
+    /// <summary>Created by the runner; callers only read reports.</summary>
+    internal MigrationTestReport()
+    {
+    }
+
     /// <summary>One result per migration, in EF apply order.</summary>
-    public required IReadOnlyList<MigrationStepResult> Steps { get; init; }
+    public IReadOnlyList<MigrationStepResult> Steps { get; internal init; } = [];
 
     /// <summary>The database the run used: the generated throwaway name, or <see cref="MigrationTestOptions.DatabaseName"/>.</summary>
-    public required string DatabaseName { get; init; }
+    public string DatabaseName { get; internal init; } = "";
 
     /// <summary>True when the database was left in place (<see cref="MigrationTestOptions.KeepDatabase"/>).</summary>
-    public bool DatabaseKept { get; init; }
+    public bool DatabaseKept { get; internal init; }
 
     /// <summary>Problems outside any one migration, such as failing to drop the throwaway database.</summary>
-    public IReadOnlyList<string> Warnings { get; init; } = [];
+    public IReadOnlyList<string> Warnings { get; internal init; } = [];
 
     /// <summary>True when every step <see cref="MigrationStepResult.Succeeded"/>.</summary>
     public bool Succeeded => Steps.All(static s => s.Succeeded);

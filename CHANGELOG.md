@@ -4,6 +4,8 @@ All notable changes to MigrationTester. Versions follow [Semantic Versioning](ht
 
 ## [Unreleased]
 
+First stable release: the same code and API as 0.1.0-preview.5, now recorded in `PublicAPI.Shipped.txt`.
+
 ## [0.1.0-preview.5] - 2026-10-27
 
 The API as planned for 0.1.0.

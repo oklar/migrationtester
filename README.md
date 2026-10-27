@@ -1,14 +1,14 @@
 # MigrationTester
 
 [![CI](https://github.com/oklar/migrationtester/actions/workflows/ci.yml/badge.svg)](https://github.com/oklar/migrationtester/actions/workflows/ci.yml)
-[![NuGet](https://img.shields.io/nuget/vpre/MigrationTester)](https://www.nuget.org/packages/MigrationTester)
+[![NuGet](https://img.shields.io/nuget/v/MigrationTester)](https://www.nuget.org/packages/MigrationTester)
 
 Tests EF Core migrations against SQL Server with the kind of data production already has. For each migration N, MigrationTester brings a test database to N−1, plants rows that are valid there but that N's `Up()` may not handle, then runs N. When the migration fails you get the SQL Server error, the planted data it broke on, and a T-SQL repair hint.
 
 **Target:** EF Core 10 / .NET 10, SQL Server. Your test project references `Microsoft.EntityFrameworkCore.SqlServer`, as your app does.
 
 ```bash
-dotnet add package MigrationTester --prerelease
+dotnet add package MigrationTester
 ```
 
 ## What it plants

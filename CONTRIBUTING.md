@@ -76,7 +76,7 @@ Releases are published from GitHub Actions with [nuget.org trusted publishing](h
 
 `.github/workflows/release.yml` then builds and tests the tagged commit, packs it with the tag's version (`v` dropped), pushes the `.nupkg` and `.snupkg` to nuget.org, and creates a GitHub release with both attached. Tags with a hyphen (`-preview.1`) become pre-releases on GitHub; NuGet treats them as pre-release versions. A new package can take a few minutes to appear on nuget.org while it is validated and indexed.
 
-### After the first stable release
+### Stable releases
 
-- Move the entries of `PublicAPI.Unshipped.txt` to `PublicAPI.Shipped.txt`.
-- Set `<PackageValidationBaselineVersion>` in `src/MigrationTester/MigrationTester.csproj` to the released version, so packing fails on accidental breaking changes against it.
+- Before tagging, move the entries of `PublicAPI.Unshipped.txt` to `PublicAPI.Shipped.txt`, so Shipped holds exactly what the release ships. New API added after that goes to Unshipped again.
+- Once the version is on nuget.org, set `<PackageValidationBaselineVersion>` in `src/MigrationTester/MigrationTester.csproj` to it, so packing fails on accidental breaking changes against it. A deliberate break needs the baseline raised, or a suppression file, in the same change.

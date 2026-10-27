@@ -16,8 +16,8 @@
 
   <!-- NuGet metadata; only used by packable projects. -->
   <PropertyGroup>
-    <Authors>Olav</Authors>
-    <Copyright>Copyright (c) 2026 Olav</Copyright>
+    <Authors>Larsenq</Authors>
+    <Copyright>Copyright (c) 2026 Larsenq</Copyright>
     <PackageProjectUrl>https://github.com/oklar/migrationtester</PackageProjectUrl>
     <RepositoryUrl>https://github.com/oklar/migrationtester</RepositoryUrl>
     <RepositoryType>git</RepositoryType>

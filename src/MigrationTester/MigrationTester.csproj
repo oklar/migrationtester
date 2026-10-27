@@ -18,6 +18,8 @@
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <EnablePackageValidation>true</EnablePackageValidation>
+    <!-- Packing fails on breaking changes against this release; see CONTRIBUTING.md, Stable releases. -->
+    <PackageValidationBaselineVersion>0.1.0</PackageValidationBaselineVersion>
   </PropertyGroup>
 
   <ItemGroup>

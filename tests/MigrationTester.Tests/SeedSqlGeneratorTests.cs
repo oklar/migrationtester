@@ -171,20 +171,73 @@ public sealed class SeedSqlGeneratorTests
     }
 
     [Fact]
-    public void CopyRow_fails_when_unique_key_can_only_change_through_foreign_keys()
+    public void CopyRow_takes_a_principal_key_no_row_references_when_the_unique_key_is_all_foreign_key_columns()
+    {
+        var postTags = PostTags();
+
+        var sql = SeedSqlGenerator.CopyRow(postTags, ["PostId"], [], ordinal: 2);
+
+        Assert.Equal(
+            "INSERT INTO [dbo].[PostTags] ([PostId], [TagId]) SELECT TOP (1) [PostId], "
+            + "(SELECT [p].[Id] FROM [dbo].[Tags] AS [p] WHERE NOT EXISTS (SELECT 1 FROM [dbo].[PostTags] AS [d] WHERE [d].[TagId] = [p].[Id]) "
+            + "ORDER BY [p].[Id] OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY) FROM [dbo].[PostTags];",
+            sql.Sql);
+        Assert.Equal([new TableName("dbo", "Tags")], SeedSqlGenerator.PrincipalsForCopies(postTags, ["PostId"], []));
+    }
+
+    [Fact]
+    public void CopyRows_take_a_different_unreferenced_principal_key_per_copy()
+    {
+        var sql = SeedSqlGenerator.CopyRows(PostTags(), ["TagId"], [], [2, 3]);
+
+        Assert.True(sql.Succeeded, sql.Failure);
+        Assert.Contains("CASE [n].[k] WHEN 1 THEN (SELECT [p].[Id] FROM [dbo].[Posts] AS [p]", sql.Sql, StringComparison.Ordinal);
+        Assert.Contains("OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY) WHEN 2 THEN (SELECT [p].[Id] FROM [dbo].[Posts]", sql.Sql, StringComparison.Ordinal);
+        Assert.Contains("OFFSET 1 ROWS FETCH NEXT 1 ROWS ONLY) END, [s].[TagId]", sql.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CopyRow_prefers_a_column_outside_foreign_keys_and_needs_no_principal_rows()
     {
         var postTags = new TableMetadata
         {
             Name = new TableName("dbo", "PostTags"),
-            Columns = [Col("PostId", "int"), Col("TagId", "int")],
-            UniqueKeys = [PrimaryKey("PostId", "TagId")],
+            Columns = [Col("PostId", "int"), Col("TagId", "int"), Col("Position", "int")],
+            UniqueKeys = [PrimaryKey("PostId", "TagId", "Position")],
             ForeignKeys = [ForeignKey("PostId", "Posts"), ForeignKey("TagId", "Tags")]
         };
 
         var sql = SeedSqlGenerator.CopyRow(postTags, [], [], ordinal: 2);
 
+        Assert.Equal("INSERT INTO [dbo].[PostTags] ([PostId], [TagId], [Position]) SELECT TOP (1) [PostId], [TagId], 1000002 FROM [dbo].[PostTags];", sql.Sql);
+        Assert.Empty(SeedSqlGenerator.PrincipalsForCopies(postTags, [], []));
+    }
+
+    [Fact]
+    public void CopyRow_fails_when_unique_key_can_only_change_through_a_foreign_key_over_several_columns()
+    {
+        var grades = new TableMetadata
+        {
+            Name = new TableName("dbo", "Grades"),
+            Columns = [Col("StudentId", "int"), Col("CourseId", "int"), Col("Mark", "int")],
+            UniqueKeys = [PrimaryKey("StudentId", "CourseId")],
+            ForeignKeys =
+            [
+                new ForeignKeyMetadata
+                {
+                    Name = "FK_Grades_Enrollments",
+                    Columns = ["StudentId", "CourseId"],
+                    PrincipalTable = new TableName("dbo", "Enrollments"),
+                    PrincipalColumns = ["StudentId", "CourseId"]
+                }
+            ]
+        };
+
+        var sql = SeedSqlGenerator.CopyRow(grades, ["StudentId"], [], ordinal: 2);
+
         Assert.False(sql.Succeeded);
         Assert.Contains("'PK'", sql.Failure);
+        Assert.Empty(SeedSqlGenerator.PrincipalsForCopies(grades, ["StudentId"], []));
     }
 
     [Fact]
@@ -296,6 +349,76 @@ public sealed class SeedSqlGeneratorTests
     }
 
     [Fact]
+    public void TryGetBadValues_orphan_for_a_column_with_a_foreign_key_to_another_table_is_a_key_of_that_table()
+    {
+        // The rows hold shelf ids, which the old foreign key keeps; one the racks do not have breaks the new one.
+        var boxes = new TableMetadata
+        {
+            Name = new TableName("dbo", "Boxes"),
+            Columns = [Col("Id", "int", identity: true), Col("ShelfId", "int")],
+            ForeignKeys = [ForeignKey("ShelfId", "Shelves")]
+        };
+        var scenario = Scenario(ScenarioKind.ForeignKeyOrphan, "ShelfId") with
+        {
+            Table = "Boxes", PrincipalSchema = "dbo", PrincipalTable = "Racks", PrincipalColumns = ["Id"]
+        };
+
+        Assert.Equal("FK_ShelfId", SeedSqlGenerator.ExistingForeignKey(scenario, boxes)?.Name);
+        Assert.True(SeedSqlGenerator.TryGetBadValues(scenario, boxes, out var values, out _));
+        const string shelfNoRackHas =
+            "(SELECT TOP (1) [p].[Id] FROM [dbo].[Shelves] AS [p] WHERE NOT EXISTS (SELECT 1 FROM [dbo].[Racks] AS [n] WHERE [n].[Id] = [p].[Id]) ORDER BY [p].[Id])";
+        Assert.Equal([new ColumnValue("ShelfId", shelfNoRackHas, Lookup: true)], values);
+
+        // When no shelf qualifies the statement plants nothing, instead of NULL.
+        Assert.Equal(
+            $"UPDATE TOP (1) [dbo].[Boxes] SET [ShelfId] = {shelfNoRackHas} WHERE {shelfNoRackHas} IS NOT NULL;",
+            SeedSqlGenerator.UpdateOneRow(boxes, values));
+        Assert.Equal(
+            $"INSERT INTO [dbo].[Boxes] ([ShelfId]) SELECT TOP (1) {shelfNoRackHas} FROM [dbo].[Boxes] WHERE {shelfNoRackHas} IS NOT NULL;",
+            SeedSqlGenerator.CopyRow(boxes, [], values, ordinal: 2).Sql);
+    }
+
+    [Fact]
+    public void TryGetBadValues_orphan_matches_the_existing_foreign_key_columns_by_name()
+    {
+        var parts = new TableMetadata
+        {
+            Name = new TableName("dbo", "Parts"),
+            Columns = [Col("Id", "int", identity: true), Col("Region", "int"), Col("Code", "int")],
+            ForeignKeys =
+            [
+                new ForeignKeyMetadata
+                {
+                    Name = "FK_Parts_Catalog",
+                    Columns = ["Region", "Code"],
+                    PrincipalTable = new TableName("dbo", "Catalog"),
+                    PrincipalColumns = ["CatalogRegion", "CatalogCode"]
+                }
+            ]
+        };
+        var scenario = new MigrationScenario
+        {
+            Kind = ScenarioKind.ForeignKeyOrphan,
+            Name = "test",
+            Table = "Parts",
+            Columns = ["Code", "Region"],
+            PrincipalSchema = "dbo",
+            PrincipalTable = "Stock",
+            PrincipalColumns = ["StockCode", "StockRegion"]
+        };
+
+        Assert.True(SeedSqlGenerator.TryGetBadValues(scenario, parts, out var values, out _));
+
+        Assert.Equal(["Code", "Region"], values.Select(static v => v.Column));
+        Assert.StartsWith("(SELECT TOP (1) [p].[CatalogCode] FROM [dbo].[Catalog]", values[0].Value, StringComparison.Ordinal);
+        Assert.StartsWith("(SELECT TOP (1) [p].[CatalogRegion] FROM [dbo].[Catalog]", values[1].Value, StringComparison.Ordinal);
+        Assert.All(values, v => Assert.Contains(
+            "WHERE [n].[StockCode] = [p].[CatalogCode] AND [n].[StockRegion] = [p].[CatalogRegion]) ORDER BY [p].[CatalogCode], [p].[CatalogRegion])",
+            v.Value,
+            StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void TryGetBadValues_conversion_uses_the_planned_value()
     {
         var table = Table("Measurements", Col("Quantity", "int"));
@@ -336,4 +459,12 @@ public sealed class SeedSqlGeneratorTests
 
     private static MigrationScenario Scenario(ScenarioKind kind, string column) =>
         new() { Kind = kind, Name = "test", Table = "T", Columns = [column] };
+
+    private static TableMetadata PostTags() => new()
+    {
+        Name = new TableName("dbo", "PostTags"),
+        Columns = [Col("PostId", "int"), Col("TagId", "int")],
+        UniqueKeys = [PrimaryKey("PostId", "TagId")],
+        ForeignKeys = [ForeignKey("PostId", "Posts"), ForeignKey("TagId", "Tags")]
+    };
 }

@@ -907,6 +907,119 @@ public sealed class ScenarioPlannerTests
     }
 
     [Fact]
+    public void Plan_foreign_key_renamed_and_moved_to_another_principal_is_planted_under_the_N_minus_1_column()
+    {
+        // What EF scaffolds when a navigation moves to another entity and its foreign key property is renamed.
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new DropForeignKeyOperation { Name = "FK_ShelfId", Table = "Boxes" },
+            new RenameColumnOperation { Name = "ShelfId", Table = "Boxes", NewName = "RackId" },
+            ForeignKey("Boxes", "RackId", "Racks")
+        ];
+
+        var schema = TestSchema.Of(
+            TestSchema.Table("Shelves", TestSchema.Col("Id", "int")),
+            TestSchema.Table("Racks", TestSchema.Col("Id", "int")),
+            new TableMetadata
+            {
+                Name = new TableName("dbo", "Boxes"),
+                Columns = [TestSchema.Col("Id", "int"), TestSchema.Col("ShelfId", "int")],
+                ForeignKeys = [TestSchema.ForeignKey("ShelfId", "Shelves")]
+            });
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
+        Assert.Equal(["ShelfId"], s.Columns);
+        Assert.Equal("Racks", s.PrincipalTable);
+        Assert.EndsWith("('RackId' was 'ShelfId' before this migration)", s.Name);
+    }
+
+    [Fact]
+    public void Plan_foreign_key_moved_to_a_principal_that_holds_every_old_key_is_not_applicable()
+    {
+        // Trucks share their key with Vehicles, so every truck id a trip holds is a vehicle id.
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new DropForeignKeyOperation { Name = "FK_TruckId", Table = "Trips" },
+            new RenameColumnOperation { Name = "TruckId", Table = "Trips", NewName = "VehicleId" },
+            ForeignKey("Trips", "VehicleId", "Vehicles")
+        ];
+
+        var schema = TestSchema.Of(
+            TestSchema.Table("Vehicles", TestSchema.Col("Id", "int")),
+            new TableMetadata
+            {
+                Name = new TableName("dbo", "Trucks"),
+                Columns = [TestSchema.Col("Id", "int")],
+                ForeignKeys = [TestSchema.ForeignKey("Id", "Vehicles")]
+            },
+            new TableMetadata
+            {
+                Name = new TableName("dbo", "Trips"),
+                Columns = [TestSchema.Col("Id", "int"), TestSchema.Col("TruckId", "int")],
+                ForeignKeys = [TestSchema.ForeignKey("TruckId", "Trucks")]
+            });
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioStatus.NotApplicable, s.Status);
+        Assert.Contains("'FK_TruckId' keeps these columns to keys of 'Trucks'", s.Reason);
+        Assert.Contains("'FK_Id' keeps those to keys of 'Vehicles'", s.Reason);
+    }
+
+    [Fact]
+    public void Plan_foreign_key_moved_to_a_principal_that_references_the_old_one_is_planted()
+    {
+        // The other way round: vehicles that are not trucks exist, and the trips may hold their ids.
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new DropForeignKeyOperation { Name = "FK_VehicleId", Table = "Trips" },
+            ForeignKey("Trips", "VehicleId", "Trucks")
+        ];
+
+        var schema = TestSchema.Of(
+            TestSchema.Table("Vehicles", TestSchema.Col("Id", "int")),
+            new TableMetadata
+            {
+                Name = new TableName("dbo", "Trucks"),
+                Columns = [TestSchema.Col("Id", "int")],
+                ForeignKeys = [TestSchema.ForeignKey("Id", "Vehicles")]
+            },
+            new TableMetadata
+            {
+                Name = new TableName("dbo", "Trips"),
+                Columns = [TestSchema.Col("Id", "int"), TestSchema.Col("VehicleId", "int")],
+                ForeignKeys = [TestSchema.ForeignKey("VehicleId", "Vehicles")]
+            });
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
+
+        Assert.Equal(ScenarioStatus.Planted, Assert.Single(scenarios).Status);
+    }
+
+    [Fact]
+    public void Plan_unique_index_on_part_of_a_key_made_of_foreign_keys_is_planted()
+    {
+        var ops = (IReadOnlyList<MigrationOperation>)
+        [
+            new CreateIndexOperation { Name = "IX_PostTags_PostId", Table = "PostTags", Columns = ["PostId"], IsUnique = true }
+        ];
+
+        var schema = TestSchema.Of(new TableMetadata
+        {
+            Name = new TableName("dbo", "PostTags"),
+            Columns = [TestSchema.Col("PostId", "int"), TestSchema.Col("TagId", "int")],
+            UniqueKeys = [TestSchema.PrimaryKey("PostId", "TagId")],
+            ForeignKeys = [TestSchema.ForeignKey("PostId", "Posts"), TestSchema.ForeignKey("TagId", "Tags")]
+        });
+        var scenarios = ScenarioPlanner.Plan(ops, schema);
+
+        var s = Assert.Single(scenarios);
+        Assert.Equal(ScenarioStatus.Planted, s.Status);
+        Assert.Equal(["PostId"], s.Columns);
+    }
+
+    [Fact]
     public void Plan_foreign_key_on_column_added_as_nullable_is_not_applicable()
     {
         var ops = (IReadOnlyList<MigrationOperation>)

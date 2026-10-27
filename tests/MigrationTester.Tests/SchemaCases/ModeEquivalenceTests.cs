@@ -32,6 +32,8 @@ public sealed class ModeEquivalenceTests
         ["OwnTransaction"] = retry => new OwnTransactionContext(Build<OwnTransactionContext>(retry)),
         ["Rename"] = retry => new RenameContext(Build<RenameContext>(retry)),
         ["NewColumn"] = retry => new NewColumnContext(Build<NewColumnContext>(retry)),
+        ["Repoint"] = retry => new RepointContext(Build<RepointContext>(retry)),
+        ["JoinTable"] = retry => new JoinTableContext(Build<JoinTableContext>(retry)),
         ["BrokenFirst"] = retry => new BrokenFirstContext(Build<BrokenFirstContext>(retry))
     };
 

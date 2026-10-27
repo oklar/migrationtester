@@ -286,6 +286,56 @@ public sealed class SchemaCaseTests
         Assert.All(step.Scenarios, s => Assert.Equal(ScenarioStatus.NotApplicable, s.Status));
     }
 
+    [Fact]
+    public async Task Foreign_key_moved_to_another_table_is_planted_with_a_key_the_old_foreign_key_accepts()
+    {
+        var step = await RunAsync<RepointContext>("20260101000002_MoveBoxesToRacks", o => new(o));
+
+        AssertBrokenBy(step, ScenarioKind.ForeignKeyOrphan);
+        var fk = Assert.Single(step.Scenarios);
+        Assert.Equal(["ShelfId"], fk.Columns);
+        Assert.Equal("Racks", fk.PrincipalTable);
+
+        // A new shelf, whose id no rack has, for a box to hold while the old foreign key still checks it.
+        Assert.Contains(step.SqlExecuted, sql => sql.StartsWith("INSERT INTO [dbo].[Shelves]", StringComparison.Ordinal));
+        Assert.Contains(step.SqlExecuted, sql => sql.StartsWith("UPDATE TOP (1) [dbo].[Boxes] SET [ShelfId] = (SELECT TOP (1) [p].[Id] FROM [dbo].[Shelves]", StringComparison.Ordinal));
+        Assert.Contains("FK_Boxes_Racks_RackId", step.Summary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Foreign_key_moved_from_a_derived_type_to_its_base_type_is_not_applicable()
+    {
+        var step = await RunAsync<RepointContext>("20260101000003_AssignTripsToVehicles", o => new(o));
+
+        Assert.True(step.Outcome == MigrationStepOutcome.Passed, step.Summary);
+        var fk = Assert.Single(step.Scenarios);
+        Assert.Equal(ScenarioStatus.NotApplicable, fk.Status);
+        Assert.Contains("FK_Trucks_Vehicles_Id", fk.Reason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Unique_index_on_part_of_a_join_table_key_copies_a_row_with_a_new_principal_row()
+    {
+        var step = await RunAsync<JoinTableContext>("20260101000002_LimitStudentsToOneCourse", o => new(o));
+
+        AssertBrokenBy(step, ScenarioKind.DuplicateUniqueIndexOrConstraint);
+        Assert.Contains(step.SqlExecuted, sql => sql.StartsWith("INSERT INTO [dbo].[Courses]", StringComparison.Ordinal));
+        Assert.Contains(step.SqlExecuted, sql => sql.StartsWith("INSERT INTO [dbo].[Enrollments] ([StudentId], [CourseId]) SELECT TOP (1) [StudentId], (SELECT [p].[Id] FROM [dbo].[Courses]", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Join_table_copy_adds_principal_rows_through_a_shared_key()
+    {
+        var step = await RunAsync<JoinTableContext>("20260101000003_LimitCoursesToOneTutor", o => new(o));
+
+        AssertBrokenBy(step, ScenarioKind.DuplicateUniqueIndexOrConstraint);
+        var inserts = step.SqlExecuted.Where(static sql => sql.StartsWith("INSERT INTO", StringComparison.Ordinal)).ToList();
+        int student = inserts.FindLastIndex(static sql => sql.StartsWith("INSERT INTO [dbo].[Students]", StringComparison.Ordinal));
+        int tutor = inserts.FindLastIndex(static sql => sql.StartsWith("INSERT INTO [dbo].[Tutors]", StringComparison.Ordinal));
+        int tutorCourse = inserts.FindLastIndex(static sql => sql.StartsWith("INSERT INTO [dbo].[TutorCourses]", StringComparison.Ordinal));
+        Assert.True(student < tutor && tutor < tutorCourse, string.Join("\n", inserts));
+    }
+
     private static MigrationTestOptions Options<TContext>(Func<DbContextOptions<TContext>, TContext> create)
         where TContext : DbContext
     {

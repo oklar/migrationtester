@@ -4,6 +4,14 @@ All notable changes to MigrationTester. Versions follow [Semantic Versioning](ht
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-27
+
+First stable release: the same code and API as 0.1.0-preview.5, now recorded in `PublicAPI.Shipped.txt`.
+
+### Changed
+
+- The package names Larsenq as author and copyright holder (`Copyright (c) 2026 Larsenq`), and the repository has the MIT `LICENSE` text that the package's license expression already declared.
+
 ## [0.1.0-preview.5] - 2026-10-27
 
 The API as planned for 0.1.0.
@@ -80,7 +88,8 @@ First preview release.
 - Each migration runs on its planted data in a transaction that is rolled back, so a run costs about two migration runs per migration; `RebuildDatabaseForEachMigration` recreates the database for every migration instead.
 - `RequireAllScenariosSeeded` to fail migrations whose scenarios could not all be planted.
 
-[Unreleased]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.5...HEAD
+[Unreleased]: https://github.com/oklar/migrationtester/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.5...v0.1.0
 [0.1.0-preview.5]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.4...v0.1.0-preview.5
 [0.1.0-preview.4]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.3...v0.1.0-preview.4
 [0.1.0-preview.3]: https://github.com/oklar/migrationtester/compare/v0.1.0-preview.2...v0.1.0-preview.3
